@@ -1,0 +1,79 @@
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color: #09090b;
+  background: #f7f7f5;
+  font-family: "Pretendard", ui-sans-serif, system-ui, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  background: #f7f7f5;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+textarea {
+  resize: none;
+}
+
+::selection {
+  color: #ffffff;
+  background: #18181b;
+}
+
+.glass-panel {
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 20px 70px rgba(15, 23, 42, 0.1);
+  backdrop-filter: blur(22px);
+}
+
+.dark-glass-panel {
+  border: 1px solid rgba(39, 39, 42, 0.7);
+  background: rgba(24, 24, 27, 0.9);
+  box-shadow: 0 20px 70px rgba(9, 9, 11, 0.22);
+  backdrop-filter: blur(22px);
+}
+
+.exam-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(24, 24, 27, 0.35) transparent;
+}
+
+.exam-scrollbar::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+
+.exam-scrollbar::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(24, 24, 27, 0.32);
+}
