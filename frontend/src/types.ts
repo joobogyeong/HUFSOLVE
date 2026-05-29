@@ -2,6 +2,8 @@ export type Screen = "login" | "home" | "exam" | "my";
 
 export type JudgeStatus = "UNSUBMITTED" | "ACCEPTED" | "WRONG_ANSWER";
 
+export type ExamType = "중간고사" | "기말고사";
+
 export interface SampleCase {
   input: string;
   output: string;
@@ -26,6 +28,8 @@ export interface MockExam {
   roomCode: string;
   title: string;
   course: string;
+  professor: string;
+  examType: ExamType;
   durationSeconds: number;
   startsAt: string;
   problems: Problem[];
