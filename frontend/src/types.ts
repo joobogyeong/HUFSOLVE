@@ -1,4 +1,4 @@
-export type Screen = "home" | "exam" | "my";
+export type Screen = "login" | "home" | "exam" | "my";
 
 export type JudgeStatus = "UNSUBMITTED" | "ACCEPTED" | "WRONG_ANSWER";
 
@@ -49,4 +49,9 @@ export interface ExamHistory {
   passedProblems: number;
   totalProblems: number;
   status: string;
+}
+
+export interface StudentProfile {
+  studentId: string;
+  name: string;
 }

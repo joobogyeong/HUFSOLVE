@@ -14,7 +14,14 @@ import {
   XCircle,
 } from "lucide-react";
 import { initialExamHistory, mockExam } from "./data";
-import type { ExamHistory, JudgeStatus, Problem, ProblemResult, Screen } from "./types";
+import type {
+  ExamHistory,
+  JudgeStatus,
+  Problem,
+  ProblemResult,
+  Screen,
+  StudentProfile,
+} from "./types";
 
 const statusLabel: Record<JudgeStatus, string> = {
   UNSUBMITTED: "미제출",
@@ -54,7 +61,11 @@ const formatDateTime = (date: string) =>
   }).format(new Date(date));
 
 function App() {
-  const [screen, setScreen] = useState<Screen>("home");
+  const [screen, setScreen] = useState<Screen>("login");
+  const [studentId, setStudentId] = useState("");
+  const [studentName, setStudentName] = useState("");
+  const [loginNotice, setLoginNotice] = useState("");
+  const [studentProfile, setStudentProfile] = useState<StudentProfile | null>(null);
   const [roomCode, setRoomCode] = useState("");
   const [homeNotice, setHomeNotice] = useState("");
   const [currentProblemId, setCurrentProblemId] = useState(mockExam.problems[0].id);
@@ -88,6 +99,33 @@ function App() {
   );
 
   const totalScore = Math.round((acceptedCount / mockExam.problems.length) * 100);
+
+  const login = () => {
+    const trimmedStudentId = studentId.trim();
+    const trimmedStudentName = studentName.trim();
+
+    if (!trimmedStudentId || !trimmedStudentName) {
+      setLoginNotice("학번과 이름을 모두 입력해주세요.");
+      return;
+    }
+
+    setStudentProfile({
+      studentId: trimmedStudentId,
+      name: trimmedStudentName,
+    });
+    setLoginNotice("");
+    setHomeNotice(`${trimmedStudentName}님, 로그인되었습니다. 시험 입장 코드를 입력해주세요.`);
+    setScreen("home");
+  };
+
+  const logout = () => {
+    setStudentProfile(null);
+    setStudentId("");
+    setStudentName("");
+    setRoomCode("");
+    setHomeNotice("");
+    setScreen("login");
+  };
 
   const finishExam = (status = "최종 제출") => {
     const newHistory: ExamHistory = {
@@ -192,10 +230,23 @@ function App() {
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_#ffffff_0,_#f7f7f5_34%,_#ececea_100%)] text-zinc-950">
+      {screen === "login" && (
+        <LoginScreen
+          notice={loginNotice}
+          studentId={studentId}
+          studentName={studentName}
+          onLogin={login}
+          onStudentIdChange={setStudentId}
+          onStudentNameChange={setStudentName}
+        />
+      )}
+
       {screen === "home" && (
         <HomeScreen
           notice={homeNotice}
           roomCode={roomCode}
+          studentProfile={studentProfile}
+          onLogout={logout}
           onRoomCodeChange={setRoomCode}
           onEnter={startExam}
           onGoMyPage={() => setScreen("my")}
@@ -225,9 +276,106 @@ function App() {
   );
 }
 
+interface LoginScreenProps {
+  notice: string;
+  studentId: string;
+  studentName: string;
+  onLogin: () => void;
+  onStudentIdChange: (value: string) => void;
+  onStudentNameChange: (value: string) => void;
+}
+
+function LoginScreen({
+  notice,
+  studentId,
+  studentName,
+  onLogin,
+  onStudentIdChange,
+  onStudentNameChange,
+}: LoginScreenProps) {
+  return (
+    <main className="flex min-h-screen flex-col px-5 py-5 sm:px-8">
+      <header className="mx-auto flex w-full max-w-6xl items-center justify-end">
+        <div className="text-sm font-semibold tracking-[0.18em] text-zinc-500">
+          HUFSOLVE
+        </div>
+      </header>
+
+      <section className="mx-auto flex w-full max-w-xl flex-1 flex-col items-center justify-center py-12 text-center">
+        <div className="mb-7 inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white/65 px-4 py-2 text-sm font-medium text-zinc-600 backdrop-blur">
+          <UserRound className="h-4 w-4" />
+          학생 로그인
+        </div>
+
+        <h1 className="text-5xl font-black leading-none text-zinc-950 sm:text-7xl">
+          HUFSOLVE
+        </h1>
+        <p className="mt-5 max-w-md text-base leading-7 text-zinc-600 sm:text-lg">
+          학번과 이름으로 로그인한 뒤 시험 입장 코드를 입력해 문제 풀이를 시작합니다.
+        </p>
+
+        <div className="glass-panel mt-10 w-full rounded-[24px] p-4 sm:p-5">
+          <div className="grid gap-3">
+            <label htmlFor="student-id" className="sr-only">
+              학번
+            </label>
+            <input
+              id="student-id"
+              value={studentId}
+              onChange={(event) => onStudentIdChange(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  onLogin();
+                }
+              }}
+              className="min-h-14 rounded-2xl border border-zinc-200 bg-white px-5 text-center text-lg font-bold text-zinc-950 outline-none transition placeholder:text-zinc-300 focus:border-zinc-950"
+              inputMode="numeric"
+              placeholder="학번"
+            />
+
+            <label htmlFor="student-name" className="sr-only">
+              이름
+            </label>
+            <input
+              id="student-name"
+              value={studentName}
+              onChange={(event) => onStudentNameChange(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  onLogin();
+                }
+              }}
+              className="min-h-14 rounded-2xl border border-zinc-200 bg-white px-5 text-center text-lg font-bold text-zinc-950 outline-none transition placeholder:text-zinc-300 focus:border-zinc-950"
+              placeholder="이름"
+            />
+
+            <button
+              type="button"
+              onClick={onLogin}
+              className="inline-flex min-h-14 items-center justify-center gap-2 rounded-2xl bg-zinc-950 px-6 text-base font-bold text-white transition hover:bg-zinc-800"
+            >
+              로그인
+              <Send className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+
+        {notice && (
+          <div className="mt-5 flex w-full items-start gap-2 rounded-2xl border border-zinc-200 bg-white/80 p-4 text-left text-sm font-medium text-zinc-700 backdrop-blur">
+            <AlertCircle className="mt-0.5 h-4 w-4 flex-none" />
+            <span>{notice}</span>
+          </div>
+        )}
+      </section>
+    </main>
+  );
+}
+
 interface HomeScreenProps {
   notice: string;
   roomCode: string;
+  studentProfile: StudentProfile | null;
+  onLogout: () => void;
   onRoomCodeChange: (value: string) => void;
   onEnter: () => void;
   onGoMyPage: () => void;
@@ -236,6 +384,8 @@ interface HomeScreenProps {
 function HomeScreen({
   notice,
   roomCode,
+  studentProfile,
+  onLogout,
   onRoomCodeChange,
   onEnter,
   onGoMyPage,
@@ -255,6 +405,24 @@ function HomeScreen({
 
         <div className="text-sm font-semibold tracking-[0.18em] text-zinc-500">
           HUFSOLVE
+        </div>
+
+        <div className="flex items-center gap-3">
+          <div className="hidden text-right sm:block">
+            <div className="text-sm font-black text-zinc-950">
+              {studentProfile?.name ?? "학생"}님
+            </div>
+            <div className="text-xs font-semibold text-zinc-500">
+              {studentProfile?.studentId ?? "로그인 정보 없음"}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onLogout}
+            className="inline-flex h-11 items-center justify-center rounded-full border border-zinc-200 bg-white/70 px-4 text-sm font-black text-zinc-950 shadow-sm backdrop-blur transition hover:border-zinc-950"
+          >
+            로그아웃
+          </button>
         </div>
       </header>
 
