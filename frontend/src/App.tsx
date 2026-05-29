@@ -79,6 +79,8 @@ const formatDuration = (seconds: number) => {
   return minutes === 0 ? `${hours}시간` : `${hours}시간 ${minutes}분`;
 };
 
+const EXAM_PAGE_SIZE = 20;
+
 function App() {
   const [screen, setScreen] = useState<Screen>("login");
   const [studentId, setStudentId] = useState("");
@@ -284,7 +286,6 @@ function App() {
           notice={homeNotice}
           roomCode={roomCode}
           studentProfile={studentProfile}
-          onEnterExam={enterExam}
           onLogout={logout}
           onRoomCodeChange={setRoomCode}
           onEnter={startExam}
@@ -416,7 +417,6 @@ interface HomeScreenProps {
   notice: string;
   roomCode: string;
   studentProfile: StudentProfile | null;
-  onEnterExam: (exam: MockExam) => void;
   onLogout: () => void;
   onRoomCodeChange: (value: string) => void;
   onEnter: () => void;
@@ -428,34 +428,38 @@ function HomeScreen({
   notice,
   roomCode,
   studentProfile,
-  onEnterExam,
   onLogout,
   onRoomCodeChange,
   onEnter,
   onGoMyPage,
 }: HomeScreenProps) {
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
-  const [visibleBatchCount, setVisibleBatchCount] = useState(1);
+  const [visibleExamCount, setVisibleExamCount] = useState(EXAM_PAGE_SIZE);
 
   const visibleExamCards = useMemo(
-    () =>
-      Array.from({ length: visibleBatchCount }, (_, batchIndex) =>
-        exams.map((exam, examIndex) => ({ batchIndex, exam, examIndex })),
-      ).flat(),
-    [exams, visibleBatchCount],
+    () => exams.slice(0, visibleExamCount),
+    [exams, visibleExamCount],
   );
+
+  const hasMoreExams = visibleExamCount < exams.length;
+
+  useEffect(() => {
+    setVisibleExamCount(EXAM_PAGE_SIZE);
+  }, [exams]);
 
   useEffect(() => {
     const target = loadMoreRef.current;
 
-    if (!target) {
+    if (!target || !hasMoreExams) {
       return;
     }
 
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
-          setVisibleBatchCount((current) => current + 1);
+          setVisibleExamCount((current) =>
+            Math.min(current + EXAM_PAGE_SIZE, exams.length),
+          );
         }
       },
       { rootMargin: "360px" },
@@ -464,7 +468,7 @@ function HomeScreen({
     observer.observe(target);
 
     return () => observer.disconnect();
-  }, []);
+  }, [exams.length, hasMoreExams]);
 
   return (
     <main className="min-h-screen px-5 py-5 sm:px-8">
@@ -572,28 +576,20 @@ function HomeScreen({
           className="grid gap-4 md:grid-cols-2 xl:grid-cols-3"
           data-testid="exam-catalog-grid"
         >
-          {visibleExamCards.map(({ batchIndex, exam, examIndex }) => (
-            <ExamCatalogCard
-              key={`${exam.roomCode}-${batchIndex}-${examIndex}`}
-              exam={exam}
-              onEnterExam={onEnterExam}
-            />
+          {visibleExamCards.map((exam) => (
+            <ExamCatalogCard key={exam.roomCode} exam={exam} />
           ))}
         </div>
 
-        <div ref={loadMoreRef} className="h-12" aria-hidden="true" />
+        {hasMoreExams && (
+          <div ref={loadMoreRef} className="h-12" aria-hidden="true" />
+        )}
       </section>
     </main>
   );
 }
 
-function ExamCatalogCard({
-  exam,
-  onEnterExam,
-}: {
-  exam: MockExam;
-  onEnterExam: (exam: MockExam) => void;
-}) {
+function ExamCatalogCard({ exam }: { exam: MockExam }) {
   return (
     <article
       className="glass-panel flex min-h-[292px] flex-col rounded-3xl p-5"
@@ -651,15 +647,6 @@ function ExamCatalogCard({
           </div>
         </div>
       </div>
-
-      <button
-        type="button"
-        onClick={() => onEnterExam(exam)}
-        className="mt-5 inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-zinc-950 px-5 text-sm font-black text-white transition hover:bg-zinc-800"
-      >
-        입장
-        <Send className="h-4 w-4" />
-      </button>
     </article>
   );
 }
