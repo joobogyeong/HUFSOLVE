@@ -1,22 +1,29 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   AlertCircle,
+  BookOpen,
+  CalendarClock,
   CheckCircle2,
+  ClipboardList,
   Clock3,
   FileText,
+  GraduationCap,
   Home,
+  KeyRound,
   ListChecks,
   Menu,
   Play,
   Send,
+  Timer,
   UserRound,
   XCircle,
 } from "lucide-react";
-import { initialExamHistory, mockExam } from "./data";
+import { initialExamHistory, mockExam, mockExams } from "./data";
 import type {
   ExamHistory,
   JudgeStatus,
+  MockExam,
   Problem,
   ProblemResult,
   Screen,
@@ -35,9 +42,9 @@ const statusTone: Record<JudgeStatus, string> = {
   WRONG_ANSWER: "border-zinc-300 bg-zinc-100 text-zinc-950",
 };
 
-const makeInitialAnswers = () =>
+const makeInitialAnswers = (exam: MockExam) =>
   Object.fromEntries(
-    mockExam.problems.map((problem) => [problem.id, problem.starterCode]),
+    exam.problems.map((problem) => [problem.id, problem.starterCode]),
   ) as Record<number, string>;
 
 const formatTime = (seconds: number) => {
@@ -60,6 +67,18 @@ const formatDateTime = (date: string) =>
     minute: "2-digit",
   }).format(new Date(date));
 
+const formatDuration = (seconds: number) => {
+  const totalMinutes = Math.floor(seconds / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  if (hours === 0) {
+    return `${minutes}분`;
+  }
+
+  return minutes === 0 ? `${hours}시간` : `${hours}시간 ${minutes}분`;
+};
+
 function App() {
   const [screen, setScreen] = useState<Screen>("login");
   const [studentId, setStudentId] = useState("");
@@ -68,8 +87,11 @@ function App() {
   const [studentProfile, setStudentProfile] = useState<StudentProfile | null>(null);
   const [roomCode, setRoomCode] = useState("");
   const [homeNotice, setHomeNotice] = useState("");
+  const [activeExam, setActiveExam] = useState<MockExam>(mockExam);
   const [currentProblemId, setCurrentProblemId] = useState(mockExam.problems[0].id);
-  const [answers, setAnswers] = useState<Record<number, string>>(makeInitialAnswers);
+  const [answers, setAnswers] = useState<Record<number, string>>(() =>
+    makeInitialAnswers(mockExam),
+  );
   const [problemResults, setProblemResults] = useState<Record<number, ProblemResult>>({});
   const [consoleOutput, setConsoleOutput] = useState("아직 실행한 결과가 없습니다.");
   const [remainingSeconds, setRemainingSeconds] = useState(mockExam.durationSeconds);
@@ -77,9 +99,9 @@ function App() {
 
   const currentProblem = useMemo(
     () =>
-      mockExam.problems.find((problem) => problem.id === currentProblemId) ??
-      mockExam.problems[0],
-    [currentProblemId],
+      activeExam.problems.find((problem) => problem.id === currentProblemId) ??
+      activeExam.problems[0],
+    [activeExam, currentProblemId],
   );
 
   const sortedHistory = useMemo(
@@ -92,13 +114,13 @@ function App() {
 
   const acceptedCount = useMemo(
     () =>
-      mockExam.problems.filter(
+      activeExam.problems.filter(
         (problem) => problemResults[problem.id]?.status === "ACCEPTED",
       ).length,
-    [problemResults],
+    [activeExam, problemResults],
   );
 
-  const totalScore = Math.round((acceptedCount / mockExam.problems.length) * 100);
+  const totalScore = Math.round((acceptedCount / activeExam.problems.length) * 100);
 
   const login = () => {
     const trimmedStudentId = studentId.trim();
@@ -130,18 +152,18 @@ function App() {
   const finishExam = (status = "최종 제출") => {
     const newHistory: ExamHistory = {
       id: `history-${Date.now()}`,
-      title: mockExam.title,
-      roomCode: roomCode.trim() || mockExam.roomCode,
+      title: activeExam.title,
+      roomCode: roomCode.trim() || activeExam.roomCode,
       submittedAt: new Date().toISOString(),
       score: totalScore,
       passedProblems: acceptedCount,
-      totalProblems: mockExam.problems.length,
+      totalProblems: activeExam.problems.length,
       status,
     };
 
     setExamHistory((current) => [newHistory, ...current]);
     setHomeNotice(
-      `${mockExam.title}이 제출되었습니다. 점수 ${totalScore}점이 내 페이지에 반영되었습니다.`,
+      `${activeExam.title}이 제출되었습니다. 점수 ${totalScore}점이 내 페이지에 반영되었습니다.`,
     );
     setScreen("home");
     setRoomCode("");
@@ -167,6 +189,18 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [remainingSeconds, screen]);
 
+  const enterExam = (exam: MockExam) => {
+    setActiveExam(exam);
+    setHomeNotice("");
+    setRoomCode(exam.roomCode);
+    setAnswers(makeInitialAnswers(exam));
+    setProblemResults({});
+    setConsoleOutput("아직 실행한 결과가 없습니다.");
+    setRemainingSeconds(exam.durationSeconds);
+    setCurrentProblemId(exam.problems[0].id);
+    setScreen("exam");
+  };
+
   const startExam = () => {
     const trimmedCode = roomCode.trim();
 
@@ -175,13 +209,16 @@ function App() {
       return;
     }
 
-    setHomeNotice("");
-    setAnswers(makeInitialAnswers());
-    setProblemResults({});
-    setConsoleOutput("아직 실행한 결과가 없습니다.");
-    setRemainingSeconds(mockExam.durationSeconds);
-    setCurrentProblemId(mockExam.problems[0].id);
-    setScreen("exam");
+    const selectedExam = mockExams.find(
+      (exam) => exam.roomCode.toLowerCase() === trimmedCode.toLowerCase(),
+    );
+
+    if (!selectedExam) {
+      setHomeNotice("등록된 시험 입장 코드가 없습니다. 시험 카드의 입장 코드를 확인해주세요.");
+      return;
+    }
+
+    enterExam(selectedExam);
   };
 
   const updateAnswer = (problemId: number, sourceCode: string) => {
@@ -243,9 +280,11 @@ function App() {
 
       {screen === "home" && (
         <HomeScreen
+          exams={mockExams}
           notice={homeNotice}
           roomCode={roomCode}
           studentProfile={studentProfile}
+          onEnterExam={enterExam}
           onLogout={logout}
           onRoomCodeChange={setRoomCode}
           onEnter={startExam}
@@ -258,6 +297,7 @@ function App() {
           answers={answers}
           consoleOutput={consoleOutput}
           currentProblem={currentProblem}
+          exam={activeExam}
           onChangeAnswer={updateAnswer}
           onFinish={() => finishExam("최종 제출")}
           onRun={runSample}
@@ -372,9 +412,11 @@ function LoginScreen({
 }
 
 interface HomeScreenProps {
+  exams: MockExam[];
   notice: string;
   roomCode: string;
   studentProfile: StudentProfile | null;
+  onEnterExam: (exam: MockExam) => void;
   onLogout: () => void;
   onRoomCodeChange: (value: string) => void;
   onEnter: () => void;
@@ -382,16 +424,50 @@ interface HomeScreenProps {
 }
 
 function HomeScreen({
+  exams,
   notice,
   roomCode,
   studentProfile,
+  onEnterExam,
   onLogout,
   onRoomCodeChange,
   onEnter,
   onGoMyPage,
 }: HomeScreenProps) {
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const [visibleBatchCount, setVisibleBatchCount] = useState(1);
+
+  const visibleExamCards = useMemo(
+    () =>
+      Array.from({ length: visibleBatchCount }, (_, batchIndex) =>
+        exams.map((exam, examIndex) => ({ batchIndex, exam, examIndex })),
+      ).flat(),
+    [exams, visibleBatchCount],
+  );
+
+  useEffect(() => {
+    const target = loadMoreRef.current;
+
+    if (!target) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setVisibleBatchCount((current) => current + 1);
+        }
+      },
+      { rootMargin: "360px" },
+    );
+
+    observer.observe(target);
+
+    return () => observer.disconnect();
+  }, []);
+
   return (
-    <main className="flex min-h-screen flex-col px-5 py-5 sm:px-8">
+    <main className="min-h-screen px-5 py-5 sm:px-8">
       <header className="mx-auto flex w-full max-w-6xl items-center justify-between">
         <button
           type="button"
@@ -426,7 +502,7 @@ function HomeScreen({
         </div>
       </header>
 
-      <section className="mx-auto flex w-full max-w-xl flex-1 flex-col items-center justify-center py-12 text-center">
+      <section className="mx-auto flex min-h-[calc(100vh-84px)] w-full max-w-xl flex-col items-center justify-center py-12 text-center">
         <div className="mb-7 inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white/65 px-4 py-2 text-sm font-medium text-zinc-600 backdrop-blur">
           <Clock3 className="h-4 w-4" />
           학생용 코딩 시험 입장
@@ -465,11 +541,6 @@ function HomeScreen({
               <Send className="h-4 w-4" />
             </button>
           </div>
-
-          <div className="mt-4 flex flex-col gap-2 text-sm text-zinc-500 sm:flex-row sm:items-center sm:justify-between">
-            <span>데모 코드: {mockExam.roomCode}</span>
-            <span>{mockExam.problems.length}문제 · 75분</span>
-          </div>
         </div>
 
         {notice && (
@@ -479,7 +550,117 @@ function HomeScreen({
           </div>
         )}
       </section>
+
+      <section className="mx-auto w-full max-w-6xl pb-16">
+        <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white/65 px-4 py-2 text-sm font-bold text-zinc-600 backdrop-blur">
+              <BookOpen className="h-4 w-4" />
+              교수 개설 시험
+            </div>
+            <h2 className="text-3xl font-black text-zinc-950 sm:text-4xl">
+              응시 가능한 시험
+            </h2>
+          </div>
+          <div className="inline-flex w-fit items-center gap-2 rounded-full border border-zinc-200 bg-white/70 px-4 py-2 text-sm font-black text-zinc-600">
+            <ClipboardList className="h-4 w-4" />
+            {exams.length}개 시험
+          </div>
+        </div>
+
+        <div
+          className="grid gap-4 md:grid-cols-2 xl:grid-cols-3"
+          data-testid="exam-catalog-grid"
+        >
+          {visibleExamCards.map(({ batchIndex, exam, examIndex }) => (
+            <ExamCatalogCard
+              key={`${exam.roomCode}-${batchIndex}-${examIndex}`}
+              exam={exam}
+              onEnterExam={onEnterExam}
+            />
+          ))}
+        </div>
+
+        <div ref={loadMoreRef} className="h-12" aria-hidden="true" />
+      </section>
     </main>
+  );
+}
+
+function ExamCatalogCard({
+  exam,
+  onEnterExam,
+}: {
+  exam: MockExam;
+  onEnterExam: (exam: MockExam) => void;
+}) {
+  return (
+    <article
+      className="glass-panel flex min-h-[292px] flex-col rounded-3xl p-5"
+      data-testid="exam-card"
+    >
+      <div className="mb-5 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white/80 px-3 py-1 text-xs font-black text-zinc-600">
+            <CalendarClock className="h-3.5 w-3.5" />
+            {exam.examType}
+          </div>
+          <h3 className="line-clamp-2 text-xl font-black leading-snug text-zinc-950">
+            {exam.title}
+          </h3>
+        </div>
+        <div className="flex h-11 w-11 flex-none items-center justify-center rounded-2xl bg-zinc-950 text-white">
+          <GraduationCap className="h-5 w-5" />
+        </div>
+      </div>
+
+      <div className="grid gap-3 text-sm font-semibold text-zinc-600">
+        <div className="flex items-center gap-2">
+          <CalendarClock className="h-4 w-4 flex-none text-zinc-950" />
+          <span>{formatDateTime(exam.startsAt)}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Timer className="h-4 w-4 flex-none text-zinc-950" />
+          <span>{formatDuration(exam.durationSeconds)}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <UserRound className="h-4 w-4 flex-none text-zinc-950" />
+          <span>{exam.professor} 교수</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <BookOpen className="h-4 w-4 flex-none text-zinc-950" />
+          <span>{exam.course}</span>
+        </div>
+      </div>
+
+      <div className="mt-5 grid grid-cols-2 gap-2 text-sm">
+        <div className="rounded-2xl border border-zinc-200 bg-white/80 px-3 py-3">
+          <div className="mb-1 flex items-center gap-1.5 text-xs font-bold text-zinc-500">
+            <ClipboardList className="h-3.5 w-3.5" />
+            문제수
+          </div>
+          <div className="font-black text-zinc-950">{exam.problems.length}문제</div>
+        </div>
+        <div className="rounded-2xl border border-zinc-200 bg-white/80 px-3 py-3">
+          <div className="mb-1 flex items-center gap-1.5 text-xs font-bold text-zinc-500">
+            <KeyRound className="h-3.5 w-3.5" />
+            입장 코드
+          </div>
+          <div className="break-all font-black tracking-wide text-zinc-950">
+            {exam.roomCode}
+          </div>
+        </div>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => onEnterExam(exam)}
+        className="mt-5 inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-zinc-950 px-5 text-sm font-black text-white transition hover:bg-zinc-800"
+      >
+        입장
+        <Send className="h-4 w-4" />
+      </button>
+    </article>
   );
 }
 
@@ -487,6 +668,7 @@ interface ExamScreenProps {
   answers: Record<number, string>;
   consoleOutput: string;
   currentProblem: Problem;
+  exam: MockExam;
   onChangeAnswer: (problemId: number, sourceCode: string) => void;
   onFinish: () => void;
   onRun: () => void;
@@ -501,6 +683,7 @@ function ExamScreen({
   answers,
   consoleOutput,
   currentProblem,
+  exam,
   onChangeAnswer,
   onFinish,
   onRun,
@@ -515,9 +698,9 @@ function ExamScreen({
       <div className="mx-auto flex max-w-[1480px] flex-col gap-4">
         <header className="glass-panel flex flex-col gap-4 rounded-3xl px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
-            <div className="text-sm font-semibold text-zinc-500">{mockExam.course}</div>
+            <div className="text-sm font-semibold text-zinc-500">{exam.course}</div>
             <h1 className="truncate text-xl font-black text-zinc-950 sm:text-2xl">
-              {mockExam.title}
+              {exam.title}
             </h1>
           </div>
 
@@ -545,11 +728,11 @@ function ExamScreen({
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-base font-black">문제 목록</h2>
               <span className="text-sm font-semibold text-zinc-500">
-                {mockExam.problems.length}문제
+                {exam.problems.length}문제
               </span>
             </div>
             <div className="grid gap-2">
-              {mockExam.problems.map((problem) => {
+              {exam.problems.map((problem) => {
                 const result = problemResults[problem.id]?.status ?? "UNSUBMITTED";
                 const active = problem.id === currentProblem.id;
 
