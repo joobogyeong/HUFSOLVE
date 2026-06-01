@@ -1,0 +1,699 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: HUFSOLVE API, worker, SQS, ALB, and RDS core infrastructure.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: hufsolve
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  PublicSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+  PrivateSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+  KeyName:
+    Type: String
+    Default: ""
+    Description: Optional EC2 key pair for emergency SSH access. Leave empty to use SSM only.
+  AllowedSshCidr:
+    Type: String
+    Default: 127.0.0.1/32
+    Description: SSH source CIDR used only when KeyName is set. Narrow this to your own IP.
+  AssignPublicIpToInstances:
+    Type: String
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
+    Description: Set true only for the low-cost classroom profile that reuses public subnets.
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+  ApiInstanceType:
+    Type: String
+    Default: t3.micro
+  WorkerInstanceType:
+    Type: String
+    Default: t3.small
+  ApiDesiredCapacity:
+    Type: Number
+    Default: 1
+  ApiMaxSize:
+    Type: Number
+    Default: 3
+  WorkerDesiredCapacity:
+    Type: Number
+    Default: 1
+  WorkerMaxSize:
+    Type: Number
+    Default: 5
+  RepositoryUrl:
+    Type: String
+    Description: Git URL that EC2 instances can clone.
+  RepositoryBranch:
+    Type: String
+    Default: main
+  FrontendOrigin:
+    Type: String
+    Default: http://localhost:5173
+    Description: CORS origin for the deployed frontend.
+  DbName:
+    Type: String
+    Default: hufsolve
+  DbUsername:
+    Type: String
+    Default: hufsolve_user
+  DbInstanceClass:
+    Type: String
+    Default: db.t3.micro
+
+Conditions:
+  HasKeyPair: !Not [!Equals [!Ref KeyName, ""]]
+  AssignPublicIp: !Equals [!Ref AssignPublicIpToInstances, "true"]
+
+Resources:
+  JudgeDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub ${ProjectName}-judge-dlq
+      MessageRetentionPeriod: 1209600
+
+  JudgeQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub ${ProjectName}-judge-queue
+      VisibilityTimeout: 120
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt JudgeDeadLetterQueue.Arn
+        maxReceiveCount: 3
+
+  PythonRunnerRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub ${ProjectName}/python-runner
+      ImageScanningConfiguration:
+        ScanOnPush: true
+
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  DatabaseSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub ${ProjectName}/database
+      GenerateSecretString:
+        SecretStringTemplate: !Sub '{"username":"${DbUsername}","database":"${DbName}"}'
+        GenerateStringKey: password
+        PasswordLength: 24
+        ExcludeCharacters: '"@/\'
+
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /${ProjectName}/api
+      RetentionInDays: 7
+
+  WorkerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /${ProjectName}/worker
+      RetentionInDays: 7
+
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: HUFSOLVE ALB inbound HTTP
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+  ApiSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: HUFSOLVE API server
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8000
+          ToPort: 8000
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+        - !If
+          - HasKeyPair
+          - IpProtocol: tcp
+            FromPort: 22
+            ToPort: 22
+            CidrIp: !Ref AllowedSshCidr
+          - !Ref AWS::NoValue
+
+  WorkerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: HUFSOLVE stateless judge worker
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - !If
+          - HasKeyPair
+          - IpProtocol: tcp
+            FromPort: 22
+            ToPort: 22
+            CidrIp: !Ref AllowedSshCidr
+          - !Ref AWS::NoValue
+
+  RdsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: HUFSOLVE RDS MySQL
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref ApiSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref WorkerSecurityGroup
+
+  DbSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: HUFSOLVE private DB subnets
+      SubnetIds: !Ref PrivateSubnetIds
+
+  Database:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    Properties:
+      DBInstanceIdentifier: !Sub ${ProjectName}-mysql
+      Engine: mysql
+      EngineVersion: "8.0"
+      DBInstanceClass: !Ref DbInstanceClass
+      AllocatedStorage: 20
+      StorageType: gp3
+      DBName: !Ref DbName
+      MasterUsername: !Ref DbUsername
+      MasterUserPassword: !Sub "{{resolve:secretsmanager:${DatabaseSecret}:SecretString:password}}"
+      PubliclyAccessible: false
+      VPCSecurityGroups:
+        - !Ref RdsSecurityGroup
+      DBSubnetGroupName: !Ref DbSubnetGroup
+      BackupRetentionPeriod: 1
+
+  ApiInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: hufsolve-api-sqs-send
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                Resource: !GetAtt JudgeQueue.Arn
+        - PolicyName: hufsolve-api-data-access
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Ref DatabaseSecret
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource: !Sub ${ArtifactBucket.Arn}/*
+
+  WorkerInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: hufsolve-worker-sqs
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:ChangeMessageVisibility
+                  - sqs:GetQueueAttributes
+                Resource: !GetAtt JudgeQueue.Arn
+        - PolicyName: hufsolve-worker-data-access
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Ref DatabaseSecret
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub ${ArtifactBucket.Arn}/*
+
+  ApiInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref ApiInstanceRole
+
+  WorkerInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref WorkerInstanceRole
+
+  ApiTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref VpcId
+      Protocol: HTTP
+      Port: 8000
+      TargetType: instance
+      HealthCheckPath: /health
+      Matcher:
+        HttpCode: "200"
+
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      Subnets: !Ref PublicSubnetIds
+      SecurityGroups:
+        - !Ref AlbSecurityGroup
+
+  HttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Protocol: HTTP
+      Port: 80
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ApiTargetGroup
+
+  ApiLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        ImageId: !Ref LatestAmiId
+        InstanceType: !Ref ApiInstanceType
+        KeyName: !If [HasKeyPair, !Ref KeyName, !Ref AWS::NoValue]
+        IamInstanceProfile:
+          Arn: !GetAtt ApiInstanceProfile.Arn
+        NetworkInterfaces:
+          - AssociatePublicIpAddress: !If [AssignPublicIp, true, false]
+            DeviceIndex: 0
+            Groups:
+              - !Ref ApiSecurityGroup
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            set -euxo pipefail
+            dnf update -y
+            dnf install -y amazon-cloudwatch-agent git python3.11 python3.11-pip
+            mkdir -p /opt/hufsolve
+            git clone --branch ${RepositoryBranch} ${RepositoryUrl} /opt/hufsolve/app
+            cd /opt/hufsolve/app
+            python3.11 -m pip install --upgrade pip
+            python3.11 -m pip install -r backend/requirements.txt
+            python3.11 - <<'PY'
+            import json
+            from pathlib import Path
+            from urllib.parse import quote_plus
+
+            import boto3
+
+            secret = boto3.client("secretsmanager", region_name="${AWS::Region}").get_secret_value(
+                SecretId="${DatabaseSecret}"
+            )
+            data = json.loads(secret["SecretString"])
+            username = quote_plus(data["username"])
+            password = quote_plus(data["password"])
+            database = quote_plus(data["database"])
+            Path("/tmp/hufsolve-database-url").write_text(
+                f"mysql+pymysql://{username}:{password}@${Database.Endpoint.Address}:3306/{database}",
+                encoding="utf-8",
+            )
+            PY
+            DATABASE_URL=$(cat /tmp/hufsolve-database-url)
+            cat >/opt/hufsolve/app/.env <<ENV
+            APP_ENV=aws
+            BACKEND_HOST=0.0.0.0
+            BACKEND_PORT=8000
+            BACKEND_CORS_ORIGINS=${FrontendOrigin}
+            DATABASE_URL=$DATABASE_URL
+            QUEUE_BACKEND=sqs
+            AWS_REGION=${AWS::Region}
+            SQS_QUEUE_URL=${JudgeQueue}
+            S3_BUCKET_NAME=${ArtifactBucket}
+            AUTO_CREATE_TABLES=true
+            AUTO_SEED=true
+            ENV
+            touch /var/log/hufsolve-api.log
+            cat >/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json <<'CWAGENT'
+            {
+              "logs": {
+                "logs_collected": {
+                  "files": {
+                    "collect_list": [
+                      {
+                        "file_path": "/var/log/hufsolve-api.log",
+                        "log_group_name": "${ApiLogGroup}",
+                        "log_stream_name": "{instance_id}"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+            CWAGENT
+            cat >/etc/systemd/system/hufsolve-api.service <<'UNIT'
+            [Unit]
+            Description=HUFSOLVE FastAPI API Server
+            After=network-online.target
+            Wants=network-online.target
+
+            [Service]
+            WorkingDirectory=/opt/hufsolve/app
+            ExecStart=/usr/bin/python3.11 -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
+            StandardOutput=append:/var/log/hufsolve-api.log
+            StandardError=append:/var/log/hufsolve-api.log
+            Restart=always
+            RestartSec=5
+
+            [Install]
+            WantedBy=multi-user.target
+            UNIT
+            /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+              -a fetch-config \
+              -m ec2 \
+              -s \
+              -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+            systemctl daemon-reload
+            systemctl enable --now hufsolve-api
+
+  WorkerLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        ImageId: !Ref LatestAmiId
+        InstanceType: !Ref WorkerInstanceType
+        KeyName: !If [HasKeyPair, !Ref KeyName, !Ref AWS::NoValue]
+        IamInstanceProfile:
+          Arn: !GetAtt WorkerInstanceProfile.Arn
+        NetworkInterfaces:
+          - AssociatePublicIpAddress: !If [AssignPublicIp, true, false]
+            DeviceIndex: 0
+            Groups:
+              - !Ref WorkerSecurityGroup
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            set -euxo pipefail
+            dnf update -y
+            dnf install -y amazon-cloudwatch-agent docker git python3.11 python3.11-pip
+            systemctl enable --now docker
+            usermod -aG docker ec2-user
+            mkdir -p /opt/hufsolve
+            git clone --branch ${RepositoryBranch} ${RepositoryUrl} /opt/hufsolve/app
+            cd /opt/hufsolve/app
+            python3.11 -m pip install --upgrade pip
+            python3.11 -m pip install -r worker/requirements.txt
+            RUNNER_IMAGE_URI=${PythonRunnerRepository.RepositoryUri}:3.11
+            RUNNER_REGISTRY=$(echo "$RUNNER_IMAGE_URI" | cut -d/ -f1)
+            JUDGE_DOCKER_IMAGE=judge-python:3.11
+            if command -v aws >/dev/null \
+              && aws ecr get-login-password --region ${AWS::Region} | docker login --username AWS --password-stdin "$RUNNER_REGISTRY" \
+              && docker pull "$RUNNER_IMAGE_URI"; then
+              JUDGE_DOCKER_IMAGE="$RUNNER_IMAGE_URI"
+            else
+              docker build -t "$JUDGE_DOCKER_IMAGE" docker/python-runner
+            fi
+            python3.11 - <<'PY'
+            import json
+            from pathlib import Path
+            from urllib.parse import quote_plus
+
+            import boto3
+
+            secret = boto3.client("secretsmanager", region_name="${AWS::Region}").get_secret_value(
+                SecretId="${DatabaseSecret}"
+            )
+            data = json.loads(secret["SecretString"])
+            username = quote_plus(data["username"])
+            password = quote_plus(data["password"])
+            database = quote_plus(data["database"])
+            Path("/tmp/hufsolve-database-url").write_text(
+                f"mysql+pymysql://{username}:{password}@${Database.Endpoint.Address}:3306/{database}",
+                encoding="utf-8",
+            )
+            PY
+            DATABASE_URL=$(cat /tmp/hufsolve-database-url)
+            cat >/opt/hufsolve/app/.env <<ENV
+            APP_ENV=aws
+            DATABASE_URL=$DATABASE_URL
+            QUEUE_BACKEND=sqs
+            AWS_REGION=${AWS::Region}
+            SQS_QUEUE_URL=${JudgeQueue}
+            S3_BUCKET_NAME=${ArtifactBucket}
+            WORKER_MAX_RECEIVE_COUNT=3
+            JUDGE_DOCKER_IMAGE=$JUDGE_DOCKER_IMAGE
+            JUDGE_MAX_OUTPUT_BYTES=65536
+            JUDGE_CONTAINER_STARTUP_GRACE_SECONDS=5
+            AUTO_CREATE_TABLES=false
+            AUTO_SEED=false
+            ENV
+            touch /var/log/hufsolve-worker.log
+            cat >/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json <<'CWAGENT'
+            {
+              "logs": {
+                "logs_collected": {
+                  "files": {
+                    "collect_list": [
+                      {
+                        "file_path": "/var/log/hufsolve-worker.log",
+                        "log_group_name": "${WorkerLogGroup}",
+                        "log_stream_name": "{instance_id}"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+            CWAGENT
+            cat >/etc/systemd/system/hufsolve-worker.service <<'UNIT'
+            [Unit]
+            Description=HUFSOLVE Judge Worker
+            After=network-online.target docker.service
+            Wants=network-online.target
+            Requires=docker.service
+
+            [Service]
+            WorkingDirectory=/opt/hufsolve/app
+            ExecStart=/usr/bin/python3.11 -m worker.main
+            StandardOutput=append:/var/log/hufsolve-worker.log
+            StandardError=append:/var/log/hufsolve-worker.log
+            Restart=always
+            RestartSec=5
+
+            [Install]
+            WantedBy=multi-user.target
+            UNIT
+            /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+              -a fetch-config \
+              -m ec2 \
+              -s \
+              -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+            systemctl daemon-reload
+            systemctl enable --now hufsolve-worker
+
+  ApiAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier: !Ref PrivateSubnetIds
+      MinSize: 1
+      DesiredCapacity: !Ref ApiDesiredCapacity
+      MaxSize: !Ref ApiMaxSize
+      TargetGroupARNs:
+        - !Ref ApiTargetGroup
+      LaunchTemplate:
+        LaunchTemplateId: !Ref ApiLaunchTemplate
+        Version: !GetAtt ApiLaunchTemplate.LatestVersionNumber
+
+  WorkerAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier: !Ref PrivateSubnetIds
+      MinSize: 1
+      DesiredCapacity: !Ref WorkerDesiredCapacity
+      MaxSize: !Ref WorkerMaxSize
+      LaunchTemplate:
+        LaunchTemplateId: !Ref WorkerLaunchTemplate
+        Version: !GetAtt WorkerLaunchTemplate.LatestVersionNumber
+
+  ApiCpuScalingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref ApiAutoScalingGroup
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+        TargetValue: 55
+
+  WorkerScaleOutPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref WorkerAutoScalingGroup
+      AdjustmentType: ChangeInCapacity
+      ScalingAdjustment: 1
+      Cooldown: 120
+
+  WorkerScaleInPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref WorkerAutoScalingGroup
+      AdjustmentType: ChangeInCapacity
+      ScalingAdjustment: -1
+      Cooldown: 180
+
+  WorkerQueueHighAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Scale out workers when judge queue grows.
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt JudgeQueue.QueueName
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref WorkerScaleOutPolicy
+
+  WorkerQueueLowAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Scale in workers when judge queue is drained.
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt JudgeQueue.QueueName
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 5
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      AlarmActions:
+        - !Ref WorkerScaleInPolicy
+
+  OperationsDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub ${ProjectName}-operations
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "Judge Queue",
+                "region": "${AWS::Region}",
+                "metrics": [
+                  ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", "${JudgeQueue.QueueName}"],
+                  [".", "ApproximateAgeOfOldestMessage", ".", "."]
+                ],
+                "period": 60,
+                "stat": "Average"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "Worker Auto Scaling",
+                "region": "${AWS::Region}",
+                "metrics": [
+                  ["AWS/AutoScaling", "GroupDesiredCapacity", "AutoScalingGroupName", "${WorkerAutoScalingGroup}"],
+                  [".", "GroupInServiceInstances", ".", "."]
+                ],
+                "period": 60,
+                "stat": "Average"
+              }
+            }
+          ]
+        }
+
+Outputs:
+  ApiBaseUrl:
+    Value: !Sub http://${ApplicationLoadBalancer.DNSName}
+  QueueUrl:
+    Value: !Ref JudgeQueue
+  DeadLetterQueueUrl:
+    Value: !Ref JudgeDeadLetterQueue
+  PythonRunnerRepositoryUri:
+    Value: !GetAtt PythonRunnerRepository.RepositoryUri
+  DatabaseEndpoint:
+    Value: !GetAtt Database.Endpoint.Address
+  DatabaseSecretArn:
+    Value: !Ref DatabaseSecret
+  ArtifactBucketName:
+    Value: !Ref ArtifactBucket
+  ApiLogGroupName:
+    Value: !Ref ApiLogGroup
+  WorkerLogGroupName:
+    Value: !Ref WorkerLogGroup
+  OperationsDashboardName:
+    Value: !Ref OperationsDashboard
+  ApiAutoScalingGroupName:
+    Value: !Ref ApiAutoScalingGroup
+  WorkerAutoScalingGroupName:
+    Value: !Ref WorkerAutoScalingGroup

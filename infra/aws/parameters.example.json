@@ -1,0 +1,50 @@
+[
+  {
+    "ParameterKey": "ProjectName",
+    "ParameterValue": "hufsolve"
+  },
+  {
+    "ParameterKey": "VpcId",
+    "ParameterValue": "vpc-xxxxxxxx"
+  },
+  {
+    "ParameterKey": "PublicSubnetIds",
+    "ParameterValue": "subnet-public-a,subnet-public-c"
+  },
+  {
+    "ParameterKey": "PrivateSubnetIds",
+    "ParameterValue": "subnet-private-a,subnet-private-c"
+  },
+  {
+    "ParameterKey": "KeyName",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "AllowedSshCidr",
+    "ParameterValue": "127.0.0.1/32"
+  },
+  {
+    "ParameterKey": "AssignPublicIpToInstances",
+    "ParameterValue": "false"
+  },
+  {
+    "ParameterKey": "RepositoryUrl",
+    "ParameterValue": "https://github.com/your-org/HUFSOLVE.git"
+  },
+  {
+    "ParameterKey": "RepositoryBranch",
+    "ParameterValue": "main"
+  },
+  {
+    "ParameterKey": "FrontendOrigin",
+    "ParameterValue": "http://localhost:5173"
+  },
+  {
+    "ParameterKey": "DbName",
+    "ParameterValue": "hufsolve"
+  },
+  {
+    "ParameterKey": "DbUsername",
+    "ParameterValue": "hufsolve_user"
+  }
+]

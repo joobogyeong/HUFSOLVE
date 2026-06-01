@@ -28,21 +28,52 @@ CloudWatch에서 다음 지표를 확인합니다.
 - Worker ASG `InServiceInstances`
 - 평균 제출 완료 시간
 
-## Script Plan
+## Script
 
-`scripts/` 디렉토리에 부하 테스트 스크립트를 추가할 예정입니다.
+부하 테스트 스크립트는 `scripts/load_test.py`입니다.
 
-예상 입력:
+로컬 예시:
+
+```bash
+python scripts/load_test.py \
+  --api-base-url http://127.0.0.1:8000 \
+  --problem-id 1 \
+  --total 20 \
+  --concurrency 5
+```
+
+AWS 예시:
+
+```bash
+python scripts/load_test.py \
+  --api-base-url http://<alb-dns> \
+  --problem-id 1 \
+  --total 200 \
+  --concurrency 40 \
+  --poll-timeout 300
+```
+
+입력:
 
 - API base URL
 - problem id
 - concurrent users
 - total submissions
 - request timeout
+- polling timeout
+- optional source file
 
-예상 출력:
+출력:
 
 - 요청 성공/실패 수
-- 평균 PENDING 응답 시간
-- 최종 채점 완료 평균 시간
+- API의 `PENDING` 응답 latency
+- 최종 채점 완료 latency
 - 상태별 제출 수
+- timeout/error sample
+
+## Validation Criteria
+
+- API가 burst 상황에서도 빠르게 `PENDING`을 반환한다.
+- SQS `ApproximateNumberOfMessagesVisible`가 증가한 뒤 Worker 처리에 따라 감소한다.
+- Worker Auto Scaling Group desired capacity가 queue alarm에 따라 증가한다.
+- 대부분의 제출이 `--poll-timeout` 안에 terminal status에 도달한다.

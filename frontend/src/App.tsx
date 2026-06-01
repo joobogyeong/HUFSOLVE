@@ -20,6 +20,16 @@ import {
   XCircle,
 } from "lucide-react";
 import { initialExamHistory, mockExam, mockExams } from "./data";
+import {
+  createExamAttempt,
+  createSampleRun,
+  createSubmission,
+  fetchExamAttempts,
+  fetchExams,
+  getSampleRun,
+  getSubmission,
+} from "./api";
+import type { SampleRunResult } from "./api";
 import type {
   ExamHistory,
   JudgeStatus,
@@ -32,14 +42,28 @@ import type {
 
 const statusLabel: Record<JudgeStatus, string> = {
   UNSUBMITTED: "미제출",
+  PENDING: "대기중",
+  RUNNING: "채점중",
   ACCEPTED: "정답",
   WRONG_ANSWER: "오답",
+  TIME_LIMIT_EXCEEDED: "시간초과",
+  MEMORY_LIMIT_EXCEEDED: "메모리초과",
+  OUTPUT_LIMIT_EXCEEDED: "출력초과",
+  RUNTIME_ERROR: "런타임 에러",
+  SYSTEM_ERROR: "시스템 에러",
 };
 
 const statusTone: Record<JudgeStatus, string> = {
   UNSUBMITTED: "border-zinc-200 bg-white/70 text-zinc-500",
+  PENDING: "border-zinc-200 bg-white/70 text-zinc-600",
+  RUNNING: "border-zinc-950 bg-white text-zinc-950",
   ACCEPTED: "border-zinc-950 bg-zinc-950 text-white",
   WRONG_ANSWER: "border-zinc-300 bg-zinc-100 text-zinc-950",
+  TIME_LIMIT_EXCEEDED: "border-zinc-300 bg-zinc-100 text-zinc-950",
+  MEMORY_LIMIT_EXCEEDED: "border-zinc-300 bg-zinc-100 text-zinc-950",
+  OUTPUT_LIMIT_EXCEEDED: "border-zinc-300 bg-zinc-100 text-zinc-950",
+  RUNTIME_ERROR: "border-zinc-300 bg-zinc-100 text-zinc-950",
+  SYSTEM_ERROR: "border-zinc-300 bg-zinc-100 text-zinc-950",
 };
 
 const makeInitialAnswers = (exam: MockExam) =>
@@ -81,6 +105,48 @@ const formatDuration = (seconds: number) => {
 
 const EXAM_PAGE_SIZE = 20;
 
+const isTerminalStatus = (status: JudgeStatus) =>
+  !["UNSUBMITTED", "PENDING", "RUNNING"].includes(status);
+
+const wait = (milliseconds: number) =>
+  new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+
+const isTerminalSampleRunStatus = (status: SampleRunResult["status"]) =>
+  !["PENDING", "RUNNING"].includes(status);
+
+const formatSampleRunConsole = (result: SampleRunResult) =>
+  [
+    `상태: ${result.message}`,
+    "",
+    "입력",
+    result.input,
+    "",
+    "출력",
+    result.stdout || result.stderr || "(출력 없음)",
+    "",
+    "예상 출력",
+    result.expectedOutput,
+  ].join("\n");
+
+const makeFallbackResult = (problem: Problem, source: string): ProblemResult => {
+  const normalized = source.replace(/\s/g, "");
+  const isAccepted =
+    normalized.includes("print(") &&
+    normalized.includes("input(") &&
+    source.trim().length > problem.starterCode.length;
+
+  return {
+    status: isAccepted ? "ACCEPTED" : "WRONG_ANSWER",
+    runtimeMs: isAccepted ? 86 + problem.id * 19 : 132,
+    memoryMb: isAccepted ? 27 + problem.id * 3 : 31,
+    passedCases: isAccepted ? problem.samples.length + 4 : 1,
+    totalCases: problem.samples.length + 4,
+    message: isAccepted
+      ? "모든 공개/숨김 테스트케이스를 통과했습니다."
+      : "일부 테스트케이스에서 예상 출력과 다른 값이 확인되었습니다.",
+  };
+};
+
 function App() {
   const [screen, setScreen] = useState<Screen>("login");
   const [studentId, setStudentId] = useState("");
@@ -98,6 +164,9 @@ function App() {
   const [consoleOutput, setConsoleOutput] = useState("아직 실행한 결과가 없습니다.");
   const [remainingSeconds, setRemainingSeconds] = useState(mockExam.durationSeconds);
   const [examHistory, setExamHistory] = useState<ExamHistory[]>(initialExamHistory);
+  const [availableExams, setAvailableExams] = useState<MockExam[]>(mockExams);
+  const [isSampleRunning, setIsSampleRunning] = useState(false);
+  const [isFinishingExam, setIsFinishingExam] = useState(false);
 
   const currentProblem = useMemo(
     () =>
@@ -124,6 +193,24 @@ function App() {
 
   const totalScore = Math.round((acceptedCount / activeExam.problems.length) * 100);
 
+  useEffect(() => {
+    let ignore = false;
+
+    fetchExams()
+      .then((exams) => {
+        if (!ignore && exams.length > 0) {
+          setAvailableExams(exams);
+        }
+      })
+      .catch(() => {
+        setAvailableExams(mockExams);
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
   const login = () => {
     const trimmedStudentId = studentId.trim();
     const trimmedStudentName = studentName.trim();
@@ -140,6 +227,12 @@ function App() {
     setLoginNotice("");
     setHomeNotice(`${trimmedStudentName}님, 로그인되었습니다. 시험 입장 코드를 입력해주세요.`);
     setScreen("home");
+
+    fetchExamAttempts(trimmedStudentId)
+      .then(setExamHistory)
+      .catch(() => {
+        setExamHistory(initialExamHistory);
+      });
   };
 
   const logout = () => {
@@ -151,8 +244,13 @@ function App() {
     setScreen("login");
   };
 
-  const finishExam = (status = "최종 제출") => {
-    const newHistory: ExamHistory = {
+  const finishExam = async (status = "최종 제출") => {
+    if (isFinishingExam) {
+      return;
+    }
+
+    setIsFinishingExam(true);
+    const fallbackHistory: ExamHistory = {
       id: `history-${Date.now()}`,
       title: activeExam.title,
       roomCode: roomCode.trim() || activeExam.roomCode,
@@ -163,12 +261,27 @@ function App() {
       status,
     };
 
+    let newHistory = fallbackHistory;
+    if (studentProfile) {
+      try {
+        newHistory = await createExamAttempt({
+          roomCode: activeExam.roomCode,
+          studentId: studentProfile.studentId,
+          studentName: studentProfile.name,
+          status,
+        });
+      } catch {
+        newHistory = fallbackHistory;
+      }
+    }
+
     setExamHistory((current) => [newHistory, ...current]);
     setHomeNotice(
       `${activeExam.title}이 제출되었습니다. 점수 ${totalScore}점이 내 페이지에 반영되었습니다.`,
     );
     setScreen("home");
     setRoomCode("");
+    setIsFinishingExam(false);
   };
 
   useEffect(() => {
@@ -211,7 +324,7 @@ function App() {
       return;
     }
 
-    const selectedExam = mockExams.find(
+    const selectedExam = availableExams.find(
       (exam) => exam.roomCode.toLowerCase() === trimmedCode.toLowerCase(),
     );
 
@@ -227,44 +340,133 @@ function App() {
     setAnswers((current) => ({ ...current, [problemId]: sourceCode }));
   };
 
-  const runSample = () => {
-    const source = answers[currentProblem.id] ?? "";
-    const sample = currentProblem.samples[0];
-    const hasPrint = source.includes("print");
-    const hasInput = source.includes("input");
-    const output =
-      hasPrint && hasInput ? sample.output : "샘플을 실행했지만 출력이 예상값과 다릅니다.";
+  const pollSampleRun = async (runId: number) => {
+    for (let attempt = 0; attempt < 90; attempt += 1) {
+      await wait(attempt === 0 ? 500 : 1000);
 
-    setConsoleOutput(
-      ["입력", sample.input, "", "출력", output, "", "예상 출력", sample.output].join(
-        "\n",
-      ),
-    );
+      const result = await getSampleRun(runId);
+      setConsoleOutput(formatSampleRunConsole(result));
+
+      if (isTerminalSampleRunStatus(result.status)) {
+        return;
+      }
+    }
+
+    setConsoleOutput("샘플 실행 결과 조회 시간이 초과되었습니다.");
   };
 
-  const submitProblem = () => {
+  const runSample = async () => {
     const source = answers[currentProblem.id] ?? "";
-    const normalized = source.replace(/\s/g, "");
-    const isAccepted =
-      normalized.includes("print(") &&
-      normalized.includes("input(") &&
-      source.trim().length > currentProblem.starterCode.length;
+    const sample = currentProblem.samples[0];
+    setIsSampleRunning(true);
+    setConsoleOutput(`${currentProblem.title} 샘플 실행 접수 중...`);
 
-    const result: ProblemResult = {
-      status: isAccepted ? "ACCEPTED" : "WRONG_ANSWER",
-      runtimeMs: isAccepted ? 86 + currentProblem.id * 19 : 132,
-      memoryMb: isAccepted ? 27 + currentProblem.id * 3 : 31,
-      passedCases: isAccepted ? currentProblem.samples.length + 4 : 1,
-      totalCases: currentProblem.samples.length + 4,
-      message: isAccepted
-        ? "모든 공개/숨김 테스트케이스를 통과했습니다."
-        : "일부 테스트케이스에서 예상 출력과 다른 값이 확인되었습니다.",
+    try {
+      const created = await createSampleRun({
+        problemId: currentProblem.id,
+        language: "python",
+        sourceCode: source,
+        sampleIndex: 0,
+      });
+      setConsoleOutput(
+        `${currentProblem.title} 샘플 실행 ID ${created.runId}번이 생성되었습니다.\nWorker 실행 결과를 확인 중입니다.`,
+      );
+      await pollSampleRun(created.runId);
+    } catch {
+      const hasPrint = source.includes("print");
+      const hasInput = source.includes("input");
+      const output =
+        hasPrint && hasInput ? sample.output : "샘플을 실행했지만 출력이 예상값과 다릅니다.";
+
+      setConsoleOutput(
+        [
+          "백엔드 API에 연결할 수 없어 프론트 mock 실행 결과를 표시했습니다.",
+          "",
+          "입력",
+          sample.input,
+          "",
+          "출력",
+          output,
+          "",
+          "예상 출력",
+          sample.output,
+        ].join("\n"),
+      );
+    } finally {
+      setIsSampleRunning(false);
+    }
+  };
+
+  const pollSubmission = async (
+    submissionId: number,
+    problemId: number,
+    problemTitle: string,
+  ) => {
+    for (let attempt = 0; attempt < 90; attempt += 1) {
+      await wait(attempt === 0 ? 700 : 1500);
+
+      const result = await getSubmission(submissionId);
+      setProblemResults((current) => ({ ...current, [problemId]: result }));
+      setConsoleOutput(
+        `${problemTitle} 제출 결과: ${statusLabel[result.status]}\n${result.message}`,
+      );
+
+      if (isTerminalStatus(result.status)) {
+        return;
+      }
+    }
+  };
+
+  const submitProblem = async () => {
+    const source = answers[currentProblem.id] ?? "";
+    const pendingResult: ProblemResult = {
+      status: "PENDING",
+      runtimeMs: 0,
+      memoryMb: null,
+      passedCases: 0,
+      totalCases: currentProblem.samples.length,
+      message: "제출을 접수하고 채점 대기열에 등록 중입니다.",
     };
 
-    setProblemResults((current) => ({ ...current, [currentProblem.id]: result }));
-    setConsoleOutput(
-      `${currentProblem.title} 제출 결과: ${statusLabel[result.status]}\n${result.message}`,
-    );
+    setProblemResults((current) => ({ ...current, [currentProblem.id]: pendingResult }));
+    setConsoleOutput(`${currentProblem.title} 제출 접수 중...`);
+
+    try {
+      const created = await createSubmission({
+        problemId: currentProblem.id,
+        language: "python",
+        sourceCode: source,
+        studentId: studentProfile?.studentId,
+        studentName: studentProfile?.name,
+      });
+
+      setProblemResults((current) => ({
+        ...current,
+        [currentProblem.id]: {
+          ...pendingResult,
+          submissionId: created.submissionId,
+          status: created.status,
+          message: "채점 대기열에 등록되었습니다.",
+        },
+      }));
+      setConsoleOutput(
+        `${currentProblem.title} 제출 ID ${created.submissionId}번이 생성되었습니다.\n채점 결과를 확인 중입니다.`,
+      );
+
+      void pollSubmission(created.submissionId, currentProblem.id, currentProblem.title).catch(() => {
+        setConsoleOutput("제출 상태 조회 중 오류가 발생했습니다. 잠시 후 다시 확인해주세요.");
+      });
+    } catch {
+      const result = makeFallbackResult(currentProblem, source);
+      setProblemResults((current) => ({ ...current, [currentProblem.id]: result }));
+      setConsoleOutput(
+        [
+          "백엔드 API에 연결할 수 없어 프론트 mock 판정으로 표시했습니다.",
+          `${currentProblem.title} 제출 결과: ${statusLabel[result.status]}`,
+          result.message,
+        ].join("\n"),
+      );
+    }
   };
 
   return (
@@ -282,7 +484,7 @@ function App() {
 
       {screen === "home" && (
         <HomeScreen
-          exams={mockExams}
+          exams={availableExams}
           notice={homeNotice}
           roomCode={roomCode}
           studentProfile={studentProfile}
@@ -300,10 +502,12 @@ function App() {
           currentProblem={currentProblem}
           exam={activeExam}
           onChangeAnswer={updateAnswer}
-          onFinish={() => finishExam("최종 제출")}
+          onFinish={() => void finishExam("최종 제출")}
+          isFinishingExam={isFinishingExam}
           onRun={runSample}
           onSelectProblem={setCurrentProblemId}
           onSubmitProblem={submitProblem}
+          isSampleRunning={isSampleRunning}
           problemResults={problemResults}
           remainingSeconds={remainingSeconds}
           totalScore={totalScore}
@@ -658,9 +862,11 @@ interface ExamScreenProps {
   exam: MockExam;
   onChangeAnswer: (problemId: number, sourceCode: string) => void;
   onFinish: () => void;
+  isFinishingExam: boolean;
   onRun: () => void;
   onSelectProblem: (problemId: number) => void;
   onSubmitProblem: () => void;
+  isSampleRunning: boolean;
   problemResults: Record<number, ProblemResult>;
   remainingSeconds: number;
   totalScore: number;
@@ -673,9 +879,11 @@ function ExamScreen({
   exam,
   onChangeAnswer,
   onFinish,
+  isFinishingExam,
   onRun,
   onSelectProblem,
   onSubmitProblem,
+  isSampleRunning,
   problemResults,
   remainingSeconds,
   totalScore,
@@ -702,9 +910,10 @@ function ExamScreen({
             <button
               type="button"
               onClick={onFinish}
-              className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-zinc-950 px-5 font-bold text-white transition hover:bg-zinc-800"
+              disabled={isFinishingExam}
+              className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-zinc-950 px-5 font-bold text-white transition hover:bg-zinc-800 disabled:cursor-wait disabled:opacity-60"
             >
-              최종 제출
+              {isFinishingExam ? "제출 중" : "최종 제출"}
               <Send className="h-4 w-4" />
             </button>
           </div>
@@ -769,6 +978,7 @@ function ExamScreen({
               onAnswerChange={(value) => onChangeAnswer(currentProblem.id, value)}
               onRun={onRun}
               onSubmit={onSubmitProblem}
+              isSampleRunning={isSampleRunning}
               result={problemResults[currentProblem.id]}
             />
           </div>
@@ -867,6 +1077,7 @@ interface CodeWorkspaceProps {
   onAnswerChange: (value: string) => void;
   onRun: () => void;
   onSubmit: () => void;
+  isSampleRunning: boolean;
   result?: ProblemResult;
 }
 
@@ -876,6 +1087,7 @@ function CodeWorkspace({
   onAnswerChange,
   onRun,
   onSubmit,
+  isSampleRunning,
   result,
 }: CodeWorkspaceProps) {
   return (
@@ -890,10 +1102,11 @@ function CodeWorkspace({
             <button
               type="button"
               onClick={onRun}
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-4 text-sm font-bold text-white transition hover:bg-white/15"
+              disabled={isSampleRunning}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-4 text-sm font-bold text-white transition hover:bg-white/15 disabled:cursor-wait disabled:opacity-60"
             >
               <Play className="h-4 w-4" />
-              실행
+              {isSampleRunning ? "실행 중" : "실행"}
             </button>
             <button
               type="button"
@@ -936,8 +1149,11 @@ function CodeWorkspace({
           {result && (
             <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
               <Metric label="통과" value={`${result.passedCases}/${result.totalCases}`} />
-              <Metric label="시간" value={`${result.runtimeMs}ms`} />
-              <Metric label="메모리" value={`${result.memoryMb}MB`} />
+              <Metric label="시간" value={result.runtimeMs > 0 ? `${result.runtimeMs}ms` : "-"} />
+              <Metric
+                label="메모리"
+                value={result.memoryMb === null ? "-" : `${result.memoryMb}MB`}
+              />
               <Metric label="상태" value={statusLabel[result.status]} />
             </div>
           )}
@@ -998,8 +1214,8 @@ function MyPage({
             </h1>
           </div>
           <p className="max-w-md text-sm leading-6 text-zinc-500">
-            최근 제출 순으로 정렬된 mock 시험 기록입니다. 현재 MVP에서는 백엔드 없이
-            프론트 상태로 결과를 저장합니다.
+            최근 제출 순으로 정렬된 시험 기록입니다. 현재 MVP에서는 최종 시험 기록을
+            프론트 상태로 관리합니다.
           </p>
         </div>
 

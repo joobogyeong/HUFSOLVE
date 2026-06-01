@@ -28,6 +28,9 @@ htmlcov/
 dist/
 build/
 *.egg-info/
+*.db
+*.sqlite
+*.sqlite3
 
 # Node / frontend
 node_modules/
@@ -60,6 +63,7 @@ Thumbs.db
 coverage/
 load-test-results/
 reports/
+infra/aws/parameters.local.json
 
 # AWS / deployment local artifacts
 .aws/

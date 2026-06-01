@@ -1,6 +1,16 @@
 export type Screen = "login" | "home" | "exam" | "my";
 
-export type JudgeStatus = "UNSUBMITTED" | "ACCEPTED" | "WRONG_ANSWER";
+export type JudgeStatus =
+  | "UNSUBMITTED"
+  | "PENDING"
+  | "RUNNING"
+  | "ACCEPTED"
+  | "WRONG_ANSWER"
+  | "TIME_LIMIT_EXCEEDED"
+  | "MEMORY_LIMIT_EXCEEDED"
+  | "OUTPUT_LIMIT_EXCEEDED"
+  | "RUNTIME_ERROR"
+  | "SYSTEM_ERROR";
 
 export type ExamType = "중간고사" | "기말고사";
 
@@ -37,8 +47,9 @@ export interface MockExam {
 
 export interface ProblemResult {
   status: JudgeStatus;
+  submissionId?: number;
   runtimeMs: number;
-  memoryMb: number;
+  memoryMb: number | null;
   passedCases: number;
   totalCases: number;
   message: string;

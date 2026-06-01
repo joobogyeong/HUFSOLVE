@@ -8,6 +8,12 @@
 judge-python:3.11
 ```
 
+빌드:
+
+```bash
+docker build -t judge-python:3.11 docker/python-runner
+```
+
 원칙:
 
 - `python:3.11-slim` 기반
