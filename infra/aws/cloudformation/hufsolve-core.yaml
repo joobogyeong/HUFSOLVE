@@ -107,16 +107,6 @@ Resources:
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
 
-  DatabaseSecret:
-    Type: AWS::SecretsManager::Secret
-    Properties:
-      Name: !Sub ${ProjectName}/database
-      GenerateSecretString:
-        SecretStringTemplate: !Sub '{"username":"${DbUsername}","database":"${DbName}"}'
-        GenerateStringKey: password
-        PasswordLength: 24
-        ExcludeCharacters: '"@/\'
-
   ApiLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
@@ -205,7 +195,7 @@ Resources:
       StorageType: gp3
       DBName: !Ref DbName
       MasterUsername: !Ref DbUsername
-      MasterUserPassword: !Sub "{{resolve:secretsmanager:${DatabaseSecret}:SecretString:password}}"
+      ManageMasterUserPassword: true
       PubliclyAccessible: false
       VPCSecurityGroups:
         - !Ref RdsSecurityGroup
@@ -241,7 +231,7 @@ Resources:
               - Effect: Allow
                 Action:
                   - secretsmanager:GetSecretValue
-                Resource: !Ref DatabaseSecret
+                Resource: !GetAtt Database.MasterUserSecret.SecretArn
               - Effect: Allow
                 Action:
                   - s3:PutObject
@@ -280,7 +270,7 @@ Resources:
               - Effect: Allow
                 Action:
                   - secretsmanager:GetSecretValue
-                Resource: !Ref DatabaseSecret
+                Resource: !GetAtt Database.MasterUserSecret.SecretArn
               - Effect: Allow
                 Action:
                   - s3:GetObject
@@ -361,12 +351,12 @@ Resources:
             import boto3
 
             secret = boto3.client("secretsmanager", region_name="${AWS::Region}").get_secret_value(
-                SecretId="${DatabaseSecret}"
+                SecretId="${Database.MasterUserSecret.SecretArn}"
             )
             data = json.loads(secret["SecretString"])
             username = quote_plus(data["username"])
             password = quote_plus(data["password"])
-            database = quote_plus(data["database"])
+            database = quote_plus("${DbName}")
             Path("/tmp/hufsolve-database-url").write_text(
                 f"mysql+pymysql://{username}:{password}@${Database.Endpoint.Address}:3306/{database}",
                 encoding="utf-8",
@@ -474,12 +464,12 @@ Resources:
             import boto3
 
             secret = boto3.client("secretsmanager", region_name="${AWS::Region}").get_secret_value(
-                SecretId="${DatabaseSecret}"
+                SecretId="${Database.MasterUserSecret.SecretArn}"
             )
             data = json.loads(secret["SecretString"])
             username = quote_plus(data["username"])
             password = quote_plus(data["password"])
-            database = quote_plus(data["database"])
+            database = quote_plus("${DbName}")
             Path("/tmp/hufsolve-database-url").write_text(
                 f"mysql+pymysql://{username}:{password}@${Database.Endpoint.Address}:3306/{database}",
                 encoding="utf-8",
@@ -684,7 +674,7 @@ Outputs:
   DatabaseEndpoint:
     Value: !GetAtt Database.Endpoint.Address
   DatabaseSecretArn:
-    Value: !Ref DatabaseSecret
+    Value: !GetAtt Database.MasterUserSecret.SecretArn
   ArtifactBucketName:
     Value: !Ref ArtifactBucket
   ApiLogGroupName:
