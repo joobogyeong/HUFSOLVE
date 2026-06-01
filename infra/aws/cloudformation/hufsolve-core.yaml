@@ -91,6 +91,7 @@ Resources:
     Type: AWS::ECR::Repository
     Properties:
       RepositoryName: !Sub ${ProjectName}/python-runner
+      EmptyOnDelete: true
       ImageScanningConfiguration:
         ScanOnPush: true
 
@@ -185,7 +186,8 @@ Resources:
 
   Database:
     Type: AWS::RDS::DBInstance
-    DeletionPolicy: Snapshot
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
       DBInstanceIdentifier: !Sub ${ProjectName}-mysql
       Engine: mysql
