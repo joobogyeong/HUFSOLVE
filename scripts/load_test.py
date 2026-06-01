@@ -34,6 +34,10 @@ class SubmissionMetric:
     error: str | None = None
 
 
+def format_error(exc: Exception) -> str:
+    return f"{type(exc).__name__}: {exc!r}"
+
+
 def percentile(values: list[int], pct: float) -> int | None:
     if not values:
         return None
@@ -91,11 +95,18 @@ async def submit_and_wait(
         final_status = str(created["status"])
 
         deadline = time.perf_counter() + poll_timeout
+        last_poll_error: str | None = None
         while time.perf_counter() < deadline:
-            status_response = await client.get(f"/submissions/{submission_id}")
-            status_response.raise_for_status()
-            payload = status_response.json()
-            final_status = str(payload["status"])
+            try:
+                status_response = await client.get(f"/submissions/{submission_id}")
+                status_response.raise_for_status()
+                payload = status_response.json()
+                final_status = str(payload["status"])
+                last_poll_error = None
+            except Exception as exc:
+                last_poll_error = format_error(exc)
+                await asyncio.sleep(poll_interval)
+                continue
 
             if final_status in TERMINAL_STATUSES:
                 completed_latency_ms = int((time.perf_counter() - start) * 1000)
@@ -115,7 +126,7 @@ async def submit_and_wait(
             accepted_latency_ms=accepted_latency_ms,
             completed_latency_ms=None,
             final_status=final_status,
-            error="poll timeout",
+            error=f"poll timeout; last poll error={last_poll_error}",
         )
 
     except Exception as exc:
@@ -125,7 +136,7 @@ async def submit_and_wait(
             accepted_latency_ms=None,
             completed_latency_ms=None,
             final_status="REQUEST_ERROR",
-            error=str(exc),
+            error=format_error(exc),
         )
 
 
@@ -203,7 +214,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--total", type=int, default=20)
     parser.add_argument("--concurrency", type=int, default=5)
     parser.add_argument("--source-file")
-    parser.add_argument("--request-timeout", type=float, default=10.0)
+    parser.add_argument("--request-timeout", type=float, default=30.0)
     parser.add_argument("--poll-interval", type=float, default=1.0)
     parser.add_argument("--poll-timeout", type=float, default=120.0)
     parser.add_argument("--student-prefix", default="load")

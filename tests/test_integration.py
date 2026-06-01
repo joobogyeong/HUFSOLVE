@@ -26,6 +26,8 @@ from backend.app.models import Problem, SampleRun, Submission
 from backend.app.queue.sqs import SqsQueueClient
 from backend.app.seed import seed_database
 from scripts.load_test import TERMINAL_STATUSES as LOAD_TEST_TERMINAL_STATUSES
+from scripts.load_test import format_error as format_load_test_error
+from scripts.load_test import submit_and_wait
 from worker.judge import judge_sample_run, judge_submission
 from worker.queue import LocalWorkerQueue, SqsWorkerQueue
 from worker.docker_runner import _communicate_limited, run_python_code, settings as docker_runner_settings
@@ -411,6 +413,53 @@ class FakeSqsSendClient:
 
     def send_message(self, **kwargs: object) -> None:
         self.messages.append(kwargs)
+
+
+class FakeLoadTestResponse:
+    def __init__(self, payload: dict[str, object]) -> None:
+        self.payload = payload
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> dict[str, object]:
+        return self.payload
+
+
+class RetryPollingClient:
+    def __init__(self) -> None:
+        self.poll_count = 0
+
+    async def post(self, *_args: object, **_kwargs: object) -> FakeLoadTestResponse:
+        return FakeLoadTestResponse({"submissionId": 1, "status": "PENDING"})
+
+    async def get(self, *_args: object, **_kwargs: object) -> FakeLoadTestResponse:
+        self.poll_count += 1
+        if self.poll_count == 1:
+            raise TimeoutError()
+        return FakeLoadTestResponse({"status": "ACCEPTED"})
+
+
+class LoadTestScriptTest(unittest.IsolatedAsyncioTestCase):
+    async def test_polling_retries_transient_request_error(self) -> None:
+        client = RetryPollingClient()
+
+        metric = await submit_and_wait(
+            client=client,
+            problem_id=1,
+            source_code="print(3)",
+            poll_interval=0,
+            poll_timeout=1,
+            student_prefix="test",
+            sequence=1,
+        )
+
+        self.assertTrue(metric.ok)
+        self.assertEqual(metric.final_status, "ACCEPTED")
+        self.assertEqual(client.poll_count, 2)
+
+    async def test_error_formatter_preserves_exception_type(self) -> None:
+        self.assertEqual(format_load_test_error(TimeoutError()), "TimeoutError: TimeoutError()")
 
 
 if __name__ == "__main__":
