@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euxo pipefail
+set -euo pipefail
 
 : "${ECR_REPOSITORY_URI:?ECR_REPOSITORY_URI is required}"
 : "${AWS_REGION:=ap-northeast-2}"

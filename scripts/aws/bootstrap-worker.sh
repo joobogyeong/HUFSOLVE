@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-set -euxo pipefail
+set -euo pipefail
 
 : "${REPOSITORY_URL:?REPOSITORY_URL is required}"
 : "${REPOSITORY_BRANCH:=main}"
 : "${DATABASE_URL:=}"
 : "${DATABASE_SECRET_ARN:=}"
 : "${DATABASE_HOST:=}"
+: "${DATABASE_NAME:=hufsolve}"
 : "${SQS_QUEUE_URL:?SQS_QUEUE_URL is required}"
 : "${S3_BUCKET_NAME:=}"
 : "${AWS_REGION:=ap-northeast-2}"
@@ -33,14 +34,16 @@ if [[ -n "${ECR_PYTHON_RUNNER_IMAGE}" ]] \
     docker login --username AWS --password-stdin "${ECR_PYTHON_RUNNER_IMAGE%%/*}" \
   && docker pull "${ECR_PYTHON_RUNNER_IMAGE}"; then
   JUDGE_DOCKER_IMAGE="${ECR_PYTHON_RUNNER_IMAGE}"
+  docker logout "${ECR_PYTHON_RUNNER_IMAGE%%/*}"
 else
+  docker logout "${ECR_PYTHON_RUNNER_IMAGE%%/*}" >/dev/null 2>&1 || true
   docker build -t "${JUDGE_DOCKER_IMAGE}" docker/python-runner
 fi
 
 if [[ -z "${DATABASE_URL}" ]]; then
   : "${DATABASE_SECRET_ARN:?DATABASE_SECRET_ARN is required when DATABASE_URL is empty}"
   : "${DATABASE_HOST:?DATABASE_HOST is required when DATABASE_URL is empty}"
-  export AWS_REGION DATABASE_SECRET_ARN DATABASE_HOST
+  export AWS_REGION DATABASE_SECRET_ARN DATABASE_HOST DATABASE_NAME
   DATABASE_URL=$(python3.11 - <<'PY'
 import json
 import os
@@ -54,12 +57,13 @@ secret = boto3.client("secretsmanager", region_name=os.environ["AWS_REGION"]).ge
 data = json.loads(secret["SecretString"])
 username = quote_plus(data["username"])
 password = quote_plus(data["password"])
-database = quote_plus(data["database"])
+database = quote_plus(os.environ["DATABASE_NAME"])
 print(f"mysql+pymysql://{username}:{password}@{os.environ['DATABASE_HOST']}:3306/{database}")
 PY
   )
 fi
 
+install -m 600 /dev/null /opt/hufsolve/app/.env
 cat >/opt/hufsolve/app/.env <<ENV
 APP_ENV=aws
 DATABASE_URL=${DATABASE_URL}

@@ -335,7 +335,7 @@ Resources:
         UserData:
           Fn::Base64: !Sub |
             #!/bin/bash
-            set -euxo pipefail
+            set -euo pipefail
             dnf update -y
             dnf install -y amazon-cloudwatch-agent git python3.11 python3.11-pip
             mkdir -p /opt/hufsolve
@@ -361,8 +361,10 @@ Resources:
                 f"mysql+pymysql://{username}:{password}@${Database.Endpoint.Address}:3306/{database}",
                 encoding="utf-8",
             )
+            Path("/tmp/hufsolve-database-url").chmod(0o600)
             PY
             DATABASE_URL=$(cat /tmp/hufsolve-database-url)
+            install -m 600 /dev/null /opt/hufsolve/app/.env
             cat >/opt/hufsolve/app/.env <<ENV
             APP_ENV=aws
             BACKEND_HOST=0.0.0.0
@@ -376,6 +378,7 @@ Resources:
             AUTO_CREATE_TABLES=true
             AUTO_SEED=true
             ENV
+            rm -f /tmp/hufsolve-database-url
             touch /var/log/hufsolve-api.log
             cat >/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json <<'CWAGENT'
             {
@@ -436,7 +439,7 @@ Resources:
         UserData:
           Fn::Base64: !Sub |
             #!/bin/bash
-            set -euxo pipefail
+            set -euo pipefail
             dnf update -y
             dnf install -y amazon-cloudwatch-agent docker git python3.11 python3.11-pip
             systemctl enable --now docker
@@ -453,7 +456,9 @@ Resources:
               && aws ecr get-login-password --region ${AWS::Region} | docker login --username AWS --password-stdin "$RUNNER_REGISTRY" \
               && docker pull "$RUNNER_IMAGE_URI"; then
               JUDGE_DOCKER_IMAGE="$RUNNER_IMAGE_URI"
+              docker logout "$RUNNER_REGISTRY"
             else
+              docker logout "$RUNNER_REGISTRY" >/dev/null 2>&1 || true
               docker build -t "$JUDGE_DOCKER_IMAGE" docker/python-runner
             fi
             python3.11 - <<'PY'
@@ -474,8 +479,10 @@ Resources:
                 f"mysql+pymysql://{username}:{password}@${Database.Endpoint.Address}:3306/{database}",
                 encoding="utf-8",
             )
+            Path("/tmp/hufsolve-database-url").chmod(0o600)
             PY
             DATABASE_URL=$(cat /tmp/hufsolve-database-url)
+            install -m 600 /dev/null /opt/hufsolve/app/.env
             cat >/opt/hufsolve/app/.env <<ENV
             APP_ENV=aws
             DATABASE_URL=$DATABASE_URL
@@ -490,6 +497,7 @@ Resources:
             AUTO_CREATE_TABLES=false
             AUTO_SEED=false
             ENV
+            rm -f /tmp/hufsolve-database-url
             touch /var/log/hufsolve-worker.log
             cat >/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json <<'CWAGENT'
             {
