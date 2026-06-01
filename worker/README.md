@@ -56,6 +56,10 @@ python -m worker.main
 Worker는 제출 코드를 임시 디렉토리의 `main.py`로 저장하고 다음 제한을 걸어 컨테이너에서 실행합니다.
 
 - `--network none`
+- `--read-only`
+- `--cap-drop ALL`
+- `--security-opt no-new-privileges=true`
+- `--tmpfs /tmp:rw,noexec,nosuid,size=16m`
 - `--memory {problem.memory_limit_mb}m`
 - `--cpus {JUDGE_CPU_LIMIT}`
 - `--pids-limit {JUDGE_PIDS_LIMIT}`

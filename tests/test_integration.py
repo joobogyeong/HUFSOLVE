@@ -294,6 +294,10 @@ class HufsolveIntegrationTest(unittest.TestCase):
         self.assertEqual(result["status"], "OK")
         self.assertIn("-i", command)
         self.assertLess(command.index("-i"), command.index("judge-python:3.11"))
+        self.assertIn("--read-only", command)
+        self.assertEqual(command[command.index("--cap-drop") + 1], "ALL")
+        self.assertEqual(command[command.index("--security-opt") + 1], "no-new-privileges=true")
+        self.assertEqual(command[command.index("--tmpfs") + 1], "/tmp:rw,noexec,nosuid,size=16m")
         self.assertIn("timeout", command)
         self.assertLess(command.index("timeout"), command.index("python3"))
 

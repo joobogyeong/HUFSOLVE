@@ -77,12 +77,14 @@ Resources:
     Properties:
       QueueName: !Sub ${ProjectName}-judge-dlq
       MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
 
   JudgeQueue:
     Type: AWS::SQS::Queue
     Properties:
       QueueName: !Sub ${ProjectName}-judge-queue
       VisibilityTimeout: 120
+      SqsManagedSseEnabled: true
       RedrivePolicy:
         deadLetterTargetArn: !GetAtt JudgeDeadLetterQueue.Arn
         maxReceiveCount: 3
@@ -195,6 +197,7 @@ Resources:
       DBInstanceClass: !Ref DbInstanceClass
       AllocatedStorage: 20
       StorageType: gp3
+      StorageEncrypted: true
       DBName: !Ref DbName
       MasterUsername: !Ref DbUsername
       ManageMasterUserPassword: true
@@ -251,9 +254,22 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
-        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
         - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
       Policies:
+        - PolicyName: hufsolve-worker-ecr-pull
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                Resource: !GetAtt PythonRunnerRepository.Arn
         - PolicyName: hufsolve-worker-sqs
           PolicyDocument:
             Version: "2012-10-17"
