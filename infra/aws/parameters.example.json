@@ -28,6 +28,42 @@
     "ParameterValue": "false"
   },
   {
+    "ParameterKey": "ApiMinSize",
+    "ParameterValue": "0"
+  },
+  {
+    "ParameterKey": "ApiDesiredCapacity",
+    "ParameterValue": "0"
+  },
+  {
+    "ParameterKey": "WorkerMinSize",
+    "ParameterValue": "0"
+  },
+  {
+    "ParameterKey": "WorkerDesiredCapacity",
+    "ParameterValue": "0"
+  },
+  {
+    "ParameterKey": "ApiWakeDesiredCapacity",
+    "ParameterValue": "1"
+  },
+  {
+    "ParameterKey": "WorkerWakeDesiredCapacity",
+    "ParameterValue": "1"
+  },
+  {
+    "ParameterKey": "IdleScaleInMinutes",
+    "ParameterValue": "20"
+  },
+  {
+    "ParameterKey": "IdleAlarmEvaluationPeriods",
+    "ParameterValue": "20"
+  },
+  {
+    "ParameterKey": "CostGuardScheduleExpression",
+    "ParameterValue": "rate(5 minutes)"
+  },
+  {
     "ParameterKey": "RepositoryUrl",
     "ParameterValue": "https://github.com/your-org/HUFSOLVE.git"
   },

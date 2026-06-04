@@ -4,6 +4,12 @@ const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:800
   /\/$/,
   "",
 );
+const WAKE_API_URL = (import.meta.env.VITE_WAKE_API_URL ?? "").replace(/\/$/, "");
+const WAKE_REUSE_MS = 5 * 60 * 1000;
+const STARTUP_RETRY_ATTEMPTS = 24;
+
+let lastWakeAt = 0;
+let wakePromise: Promise<void> | null = null;
 
 interface CreateSubmissionRequest {
   problemId: number;
@@ -74,20 +80,86 @@ interface CreateExamAttemptRequest {
   status: string;
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...init?.headers,
-    },
-    ...init,
-  });
+interface RequestOptions {
+  wakeBackend?: boolean;
+}
 
-  if (!response.ok) {
-    throw new Error(`API ${response.status}: ${path}`);
+const wait = (milliseconds: number) =>
+  new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+
+async function wakeBackendIfConfigured() {
+  if (!WAKE_API_URL) {
+    return;
   }
 
-  return response.json() as Promise<T>;
+  if (Date.now() - lastWakeAt < WAKE_REUSE_MS) {
+    return;
+  }
+
+  if (!wakePromise) {
+    wakePromise = fetch(WAKE_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ reason: "exam-request" }),
+    })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`Wake API ${response.status}`);
+        }
+        lastWakeAt = Date.now();
+      })
+      .finally(() => {
+        wakePromise = null;
+      });
+  }
+
+  return wakePromise;
+}
+
+function isTransientStartupStatus(status: number) {
+  return status === 502 || status === 503 || status === 504;
+}
+
+async function request<T>(
+  path: string,
+  init?: RequestInit,
+  options: RequestOptions = {},
+): Promise<T> {
+  if (options.wakeBackend) {
+    await wakeBackendIfConfigured();
+  }
+
+  const maxAttempts = options.wakeBackend ? STARTUP_RETRY_ATTEMPTS : 1;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      const response = await fetch(`${API_BASE_URL}${path}`, {
+        headers: {
+          "Content-Type": "application/json",
+          ...init?.headers,
+        },
+        ...init,
+      });
+
+      if (response.ok) {
+        return response.json() as Promise<T>;
+      }
+
+      if (!options.wakeBackend || !isTransientStartupStatus(response.status)) {
+        throw new Error(`API ${response.status}: ${path}`);
+      }
+    } catch (error) {
+      if (!options.wakeBackend || attempt === maxAttempts - 1) {
+        throw error;
+      }
+    }
+
+    await wait(Math.min(3000 + attempt * 2000, 10000));
+  }
+
+  throw new Error(`API startup timeout: ${path}`);
 }
 
 export async function fetchExams(): Promise<MockExam[]> {
@@ -97,10 +169,14 @@ export async function fetchExams(): Promise<MockExam[]> {
 export async function createSubmission(
   payload: CreateSubmissionRequest,
 ): Promise<CreateSubmissionResponse> {
-  return request<CreateSubmissionResponse>("/submissions", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
+  return request<CreateSubmissionResponse>(
+    "/submissions",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    { wakeBackend: true },
+  );
 }
 
 export async function getSubmission(submissionId: number): Promise<ProblemResult> {
@@ -120,10 +196,14 @@ export async function getSubmission(submissionId: number): Promise<ProblemResult
 export async function createSampleRun(
   payload: CreateSampleRunRequest,
 ): Promise<CreateSampleRunResponse> {
-  return request<CreateSampleRunResponse>("/runs", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
+  return request<CreateSampleRunResponse>(
+    "/runs",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    { wakeBackend: true },
+  );
 }
 
 export async function getSampleRun(runId: number): Promise<SampleRunResult> {
@@ -133,10 +213,14 @@ export async function getSampleRun(runId: number): Promise<SampleRunResult> {
 export async function createExamAttempt(
   payload: CreateExamAttemptRequest,
 ): Promise<ExamHistory> {
-  return request<ExamHistory>("/exam-attempts", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
+  return request<ExamHistory>(
+    "/exam-attempts",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    { wakeBackend: true },
+  );
 }
 
 export async function fetchExamAttempts(studentId: string): Promise<ExamHistory[]> {
