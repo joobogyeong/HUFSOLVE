@@ -13,6 +13,8 @@
 - ECR repository for the Python runner image
 - EC2 IAM roles and security groups
 - Worker queue-length based scale out/in alarms
+- API Gateway HTTP API and Lambda wake endpoint
+- CloudWatch/EventBridge cost guard that scales idle API/Worker ASGs to zero
 
 ## Prerequisites
 
@@ -106,7 +108,25 @@ curl http://<alb-dns>/exams
 
 ```text
 VITE_API_BASE_URL=http://<alb-dns>
+VITE_WAKE_API_URL=https://<api-id>.execute-api.<region>.amazonaws.com/wake
 ```
+
+`VITE_WAKE_API_URL`에는 CloudFormation output의 `ServerlessWakeApiUrl` 값을 넣습니다. 프론트엔드는 제출, 공개 예제 실행, 최종 제출 기록 생성 전에 이 endpoint를 먼저 호출해 API/Worker ASG를 0대에서 깨웁니다. 로컬 개발에서는 이 값을 비워두면 기존처럼 바로 `VITE_API_BASE_URL`로 요청합니다.
+
+## Cost Control Operations
+
+비시험 기간 기본값은 API/Worker ASG `MinSize=0`, `DesiredCapacity=0`입니다. `POST /wake`가 호출되면 Lambda가 `ApiWakeDesiredCapacity`, `WorkerWakeDesiredCapacity` 값으로 desired capacity를 올립니다.
+
+```bash
+aws cloudformation describe-stacks \
+  --stack-name hufsolve-core \
+  --query "Stacks[0].Outputs[?OutputKey=='ServerlessWakeApiUrl'].OutputValue" \
+  --output text
+```
+
+CloudWatch `ApiIdleNoRequestsAlarm`은 ALB 요청이 idle window 동안 없으면 Lambda guard를 호출합니다. guard는 SQS visible/in-flight/delayed 메시지가 모두 0인지 확인한 뒤 API/Worker desired capacity를 0으로 낮춥니다. EventBridge schedule도 주기적으로 같은 guard를 호출하므로 alarm transition이 이미 지나간 상태에서도 유휴 EC2가 남아 있는지 다시 확인합니다.
+
+시험 시작 직전 cold start를 피하려면 parameter update로 `ApiDesiredCapacity`와 `WorkerDesiredCapacity`를 1 이상으로 올려 warm 상태를 만들고, 시험 종료 후 0으로 되돌립니다. 이 변경은 EC2 비용을 줄이기 위한 것이며 ALB, RDS, CloudWatch, S3, ECR 비용은 별도로 남습니다.
 
 ## Operational Notes
 

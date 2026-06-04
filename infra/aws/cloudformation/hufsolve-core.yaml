@@ -35,18 +35,46 @@ Parameters:
   WorkerInstanceType:
     Type: String
     Default: t3.small
+  ApiMinSize:
+    Type: Number
+    Default: 0
+    Description: Keep 0 outside exam windows. The wake Lambda raises desired capacity on demand.
   ApiDesiredCapacity:
     Type: Number
-    Default: 1
+    Default: 0
   ApiMaxSize:
     Type: Number
     Default: 3
+  WorkerMinSize:
+    Type: Number
+    Default: 0
+    Description: Keep 0 outside exam windows. SQS backlog or the wake Lambda starts workers.
   WorkerDesiredCapacity:
     Type: Number
-    Default: 1
+    Default: 0
   WorkerMaxSize:
     Type: Number
     Default: 5
+  ApiWakeDesiredCapacity:
+    Type: Number
+    Default: 1
+    Description: API ASG desired capacity set by the serverless wake endpoint.
+  WorkerWakeDesiredCapacity:
+    Type: Number
+    Default: 1
+    Description: Worker ASG desired capacity set by the serverless wake endpoint.
+  IdleScaleInMinutes:
+    Type: Number
+    Default: 20
+    Description: Minutes of no ALB requests and no SQS backlog before the guard scales EC2 to zero.
+  IdleAlarmEvaluationPeriods:
+    Type: Number
+    Default: 20
+    Description: One-minute periods used by the CloudWatch idle alarm.
+  CostGuardScheduleExpression:
+    Type: String
+    Default: rate(5 minutes)
+    Description: EventBridge schedule that rechecks idle EC2 capacity even if an alarm transition is missed.
   RepositoryUrl:
     Type: String
     Description: Git URL that EC2 instances can clone.
@@ -307,6 +335,37 @@ Resources:
       Roles:
         - !Ref WorkerInstanceRole
 
+  ServerlessControlFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: hufsolve-serverless-control
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - autoscaling:DescribeAutoScalingGroups
+                  - autoscaling:SetDesiredCapacity
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - sqs:GetQueueAttributes
+                Resource: !GetAtt JudgeQueue.Arn
+              - Effect: Allow
+                Action:
+                  - cloudwatch:GetMetricStatistics
+                Resource: "*"
+
   ApiTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
@@ -564,7 +623,7 @@ Resources:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
       VPCZoneIdentifier: !Ref PrivateSubnetIds
-      MinSize: 1
+      MinSize: !Ref ApiMinSize
       DesiredCapacity: !Ref ApiDesiredCapacity
       MaxSize: !Ref ApiMaxSize
       TargetGroupARNs:
@@ -577,7 +636,7 @@ Resources:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
       VPCZoneIdentifier: !Ref PrivateSubnetIds
-      MinSize: 1
+      MinSize: !Ref WorkerMinSize
       DesiredCapacity: !Ref WorkerDesiredCapacity
       MaxSize: !Ref WorkerMaxSize
       LaunchTemplate:
@@ -610,6 +669,194 @@ Resources:
       ScalingAdjustment: -1
       Cooldown: 180
 
+  ServerlessControlFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${ProjectName}-serverless-control
+      Description: Wakes HUFSOLVE EC2 fleets on exam requests and scales them to zero after idle periods.
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt ServerlessControlFunctionRole.Arn
+      Timeout: 30
+      Environment:
+        Variables:
+          API_ASG_NAME: !Ref ApiAutoScalingGroup
+          WORKER_ASG_NAME: !Ref WorkerAutoScalingGroup
+          QUEUE_URL: !Ref JudgeQueue
+          ALB_FULL_NAME: !GetAtt ApplicationLoadBalancer.LoadBalancerFullName
+          FRONTEND_ORIGIN: !Ref FrontendOrigin
+          API_WARM_DESIRED: !Ref ApiWakeDesiredCapacity
+          WORKER_WARM_DESIRED: !Ref WorkerWakeDesiredCapacity
+          IDLE_SCALE_IN_MINUTES: !Ref IdleScaleInMinutes
+      Code:
+        ZipFile: |
+          import json, os
+          from datetime import datetime, timedelta, timezone
+          import boto3
+
+          ag = boto3.client("autoscaling")
+          cw = boto3.client("cloudwatch")
+          qs = boto3.client("sqs")
+          API = os.environ["API_ASG_NAME"]
+          WORKER = os.environ["WORKER_ASG_NAME"]
+          QUEUE = os.environ["QUEUE_URL"]
+          ALB = os.environ["ALB_FULL_NAME"]
+          ORIGIN = os.environ.get("FRONTEND_ORIGIN", "*")
+          API_WARM = int(os.environ.get("API_WARM_DESIRED", "1"))
+          WORKER_WARM = int(os.environ.get("WORKER_WARM_DESIRED", "1"))
+          IDLE_MIN = int(os.environ.get("IDLE_SCALE_IN_MINUTES", "20"))
+
+          def handler(event, context):
+              if isinstance(event, dict) and "http" in event.get("requestContext", {}):
+                  try:
+                      return wake()
+                  except Exception as exc:
+                      return response(500, {"error": str(exc)})
+              return guard()
+
+          def wake():
+              return response(202, {"message": "wake requested", "actions": [
+                  capacity(API, API_WARM, "wake-api"),
+                  capacity(WORKER, WORKER_WARM, "wake-worker"),
+              ]})
+
+          def guard():
+              q = queue_counts()
+              total = q["visible"] + q["notVisible"] + q["delayed"]
+              recent = request_count()
+              actions = []
+              worker = group(WORKER)
+              api = group(API)
+              if total and worker["DesiredCapacity"] < WORKER_WARM:
+                  actions.append(capacity(WORKER, WORKER_WARM, "queue-worker-wake"))
+              if not total and worker["DesiredCapacity"] > 0:
+                  actions.append(capacity(WORKER, 0, "idle-worker-stop"))
+              if not total and not recent and api["DesiredCapacity"] > 0:
+                  actions.append(capacity(API, 0, "idle-api-stop"))
+              return {"mode": "cost-guard", "queue": q, "recentAlbRequestCount": recent, "actions": actions}
+
+          def response(code, body):
+              return {"statusCode": code, "headers": {
+                  "Access-Control-Allow-Origin": ORIGIN,
+                  "Access-Control-Allow-Headers": "content-type",
+                  "Access-Control-Allow-Methods": "OPTIONS,POST",
+                  "Content-Type": "application/json",
+                  "Vary": "Origin",
+              }, "body": json.dumps(body)}
+
+          def queue_counts():
+              attrs = qs.get_queue_attributes(QueueUrl=QUEUE, AttributeNames=[
+                  "ApproximateNumberOfMessages",
+                  "ApproximateNumberOfMessagesNotVisible",
+                  "ApproximateNumberOfMessagesDelayed",
+              ]).get("Attributes", {})
+              return {
+                  "visible": int(attrs.get("ApproximateNumberOfMessages", "0")),
+                  "notVisible": int(attrs.get("ApproximateNumberOfMessagesNotVisible", "0")),
+                  "delayed": int(attrs.get("ApproximateNumberOfMessagesDelayed", "0")),
+              }
+
+          def request_count():
+              end = datetime.now(timezone.utc)
+              res = cw.get_metric_statistics(
+                  Namespace="AWS/ApplicationELB",
+                  MetricName="RequestCount",
+                  Dimensions=[{"Name": "LoadBalancer", "Value": ALB}],
+                  StartTime=end - timedelta(minutes=IDLE_MIN),
+                  EndTime=end,
+                  Period=60,
+                  Statistics=["Sum"],
+              )
+              return int(sum(p.get("Sum", 0) for p in res.get("Datapoints", [])))
+
+          def group(name):
+              groups = ag.describe_auto_scaling_groups(AutoScalingGroupNames=[name]).get("AutoScalingGroups", [])
+              if not groups:
+                  raise RuntimeError(f"ASG not found: {name}")
+              return groups[0]
+
+          def capacity(name, desired, reason):
+              g = group(name)
+              current = int(g["DesiredCapacity"])
+              target = min(max(int(desired), int(g["MinSize"])), int(g["MaxSize"]))
+              changed = current != target
+              if changed:
+                  ag.set_desired_capacity(AutoScalingGroupName=name, DesiredCapacity=target, HonorCooldown=False)
+              return {"asg": name, "reason": reason, "changed": changed, "previousDesiredCapacity": current, "desiredCapacity": target}
+
+  ServerlessWakeApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub ${ProjectName}-wake
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowOrigins:
+          - !Ref FrontendOrigin
+        AllowMethods:
+          - OPTIONS
+          - POST
+        AllowHeaders:
+          - content-type
+
+  ServerlessWakeIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ServerlessWakeApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub
+        - arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${FunctionArn}/invocations
+        - FunctionArn: !GetAtt ServerlessControlFunction.Arn
+      PayloadFormatVersion: "2.0"
+
+  ServerlessWakeRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ServerlessWakeApi
+      RouteKey: POST /wake
+      Target: !Sub integrations/${ServerlessWakeIntegration}
+
+  ServerlessWakeStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref ServerlessWakeApi
+      StageName: "$default"
+      AutoDeploy: true
+
+  ServerlessWakeApiInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ServerlessControlFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${ServerlessWakeApi}/*/POST/wake
+
+  CloudWatchAlarmInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ServerlessControlFunction
+      Action: lambda:InvokeFunction
+      Principal: lambda.alarms.cloudwatch.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+
+  CostGuardScheduleRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Periodically checks whether HUFSOLVE EC2 fleets should be scaled to zero.
+      ScheduleExpression: !Ref CostGuardScheduleExpression
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt ServerlessControlFunction.Arn
+          Id: hufsolve-serverless-control
+          Input: '{"source":"hufsolve.cost-guard"}'
+
+  CostGuardSchedulePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ServerlessControlFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt CostGuardScheduleRule.Arn
+
   WorkerQueueHighAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -621,14 +868,15 @@ Resources:
           Value: !GetAtt JudgeQueue.QueueName
       Statistic: Average
       Period: 60
-      EvaluationPeriods: 2
-      Threshold: 10
+      EvaluationPeriods: 1
+      Threshold: 0
       ComparisonOperator: GreaterThanThreshold
       AlarmActions:
         - !Ref WorkerScaleOutPolicy
 
   WorkerQueueLowAlarm:
     Type: AWS::CloudWatch::Alarm
+    DependsOn: CloudWatchAlarmInvokePermission
     Properties:
       AlarmDescription: Scale in workers when judge queue is drained.
       Namespace: AWS/SQS
@@ -643,6 +891,27 @@ Resources:
       ComparisonOperator: LessThanThreshold
       AlarmActions:
         - !Ref WorkerScaleInPolicy
+        - !GetAtt ServerlessControlFunction.Arn
+
+  ApiIdleNoRequestsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    DependsOn: CloudWatchAlarmInvokePermission
+    Properties:
+      AlarmDescription: Invoke cost guard when the API fleet has no ALB requests for the idle window.
+      Namespace: AWS/ApplicationELB
+      MetricName: RequestCount
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !GetAtt ApplicationLoadBalancer.LoadBalancerFullName
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: !Ref IdleAlarmEvaluationPeriods
+      DatapointsToAlarm: !Ref IdleAlarmEvaluationPeriods
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions:
+        - !GetAtt ServerlessControlFunction.Arn
 
   OperationsDashboard:
     Type: AWS::CloudWatch::Dashboard
@@ -684,6 +953,40 @@ Resources:
                 "period": 60,
                 "stat": "Average"
               }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 6,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "API Auto Scaling",
+                "region": "${AWS::Region}",
+                "metrics": [
+                  ["AWS/AutoScaling", "GroupDesiredCapacity", "AutoScalingGroupName", "${ApiAutoScalingGroup}"],
+                  [".", "GroupInServiceInstances", ".", "."]
+                ],
+                "period": 60,
+                "stat": "Average"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 6,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "Serverless Control Lambda",
+                "region": "${AWS::Region}",
+                "metrics": [
+                  ["AWS/Lambda", "Invocations", "FunctionName", "${ServerlessControlFunction}"],
+                  [".", "Errors", ".", "."]
+                ],
+                "period": 60,
+                "stat": "Sum"
+              }
             }
           ]
         }
@@ -709,6 +1012,12 @@ Outputs:
     Value: !Ref WorkerLogGroup
   OperationsDashboardName:
     Value: !Ref OperationsDashboard
+  ServerlessWakeApiUrl:
+    Value: !Sub https://${ServerlessWakeApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/wake
+  ServerlessControlFunctionName:
+    Value: !Ref ServerlessControlFunction
+  ApiIdleNoRequestsAlarmName:
+    Value: !Ref ApiIdleNoRequestsAlarm
   ApiAutoScalingGroupName:
     Value: !Ref ApiAutoScalingGroup
   WorkerAutoScalingGroupName:
