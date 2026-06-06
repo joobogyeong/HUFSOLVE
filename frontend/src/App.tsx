@@ -175,6 +175,8 @@ function App() {
   const [emailCode, setEmailCode] = useState("");
   const [isEmailCodeSent, setIsEmailCodeSent] = useState(false);
   const [isEmailVerified, setIsEmailVerified] = useState(false);
+  const [verifiedStudentId, setVerifiedStudentId] = useState("");
+  const [verifiedEmail, setVerifiedEmail] = useState("");
 
   const currentProblem = useMemo(
     () =>
@@ -254,6 +256,8 @@ const verifyCode = async () => {
 
     if (result.verified) {
       setIsEmailVerified(true);
+      setVerifiedStudentId(studentId.trim());
+      setVerifiedEmail(studentEmail.trim());
       setLoginNotice("학교 이메일 인증이 완료되었습니다.");
     }
   } catch {
@@ -262,66 +266,61 @@ const verifyCode = async () => {
 };
 
   const login = async () => {
-    const trimmedStudentId = studentId.trim();
-    const trimmedStudentName = studentName.trim();
-    const trimmedEmail = studentEmail.trim();
+  const trimmedStudentId = studentId.trim();
+  const trimmedStudentName = studentName.trim();
+  const trimmedEmail = studentEmail.trim();
 
-    if (!trimmedStudentId || !trimmedStudentName) {
-      setLoginNotice("학번과 이름을 모두 입력해주세요.");
-      return;
-    }
-    if (!trimmedEmail) {
-      setLoginNotice("학교 이메일을 입력해주세요.");
-      return;
-    }
+  if (!trimmedStudentId || !trimmedStudentName) {
+    setLoginNotice("학번과 이름을 모두 입력해주세요.");
+    return;
+  }
 
-    if (!isEmailVerified) {
-      try {
-        const result = await checkEmailVerified({
-          studentId: trimmedStudentId,
-          email: studentEmail.trim(),
-        });
+  if (!trimmedEmail) {
+    setLoginNotice("학교 이메일을 입력해주세요.");
+    return;
+  }
 
-        if (!isEmailVerified) {
-          try {
-            const result = await checkEmailVerified({
-              studentId: trimmedStudentId,
-              email: trimmedEmail,
-            });
+  const isCurrentEmailVerified =
+    isEmailVerified &&
+    verifiedStudentId === trimmedStudentId &&
+    verifiedEmail === trimmedEmail;
 
-            if (!result.verified) {
-              setLoginNotice("학교 이메일 인증을 완료해주세요.");
-              return;
-            }
+  if (!isCurrentEmailVerified) {
+    try {
+      const result = await checkEmailVerified({
+        studentId: trimmedStudentId,
+        email: trimmedEmail,
+      });
 
-            setIsEmailVerified(true);
-          } catch {
-            setLoginNotice("학교 이메일 인증 여부를 확인할 수 없습니다.");
-            return;
-          }
-        }
-
-        setIsEmailVerified(true);
-      } catch {
-        setLoginNotice("학교 이메일 인증 여부를 확인할 수 없습니다.");
+      if (!result.verified) {
+        setLoginNotice("학교 이메일 인증을 완료해주세요.");
         return;
       }
-}
 
-    setStudentProfile({
-      studentId: trimmedStudentId,
-      name: trimmedStudentName,
+      setIsEmailVerified(true);
+      setVerifiedStudentId(trimmedStudentId);
+      setVerifiedEmail(trimmedEmail);
+    } catch {
+      setLoginNotice("학교 이메일 인증 여부를 확인할 수 없습니다.");
+      return;
+    }
+  }
+
+  setStudentProfile({
+    studentId: trimmedStudentId,
+    name: trimmedStudentName,
+  });
+
+  setLoginNotice("");
+  setHomeNotice(`${trimmedStudentName}님, 로그인되었습니다. 시험 입장 코드를 입력해주세요.`);
+  setScreen("home");
+
+  fetchExamAttempts(trimmedStudentId)
+    .then(setExamHistory)
+    .catch(() => {
+      setExamHistory(initialExamHistory);
     });
-    setLoginNotice("");
-    setHomeNotice(`${trimmedStudentName}님, 로그인되었습니다. 시험 입장 코드를 입력해주세요.`);
-    setScreen("home");
-
-    fetchExamAttempts(trimmedStudentId)
-      .then(setExamHistory)
-      .catch(() => {
-        setExamHistory(initialExamHistory);
-      });
-  };
+};
 
   const logout = () => {
     setStudentProfile(null);

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import random
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -11,7 +10,7 @@ from ..database import get_db
 from ..models import EmailVerification
 
 import re
-
+import secrets
 import os
 import smtplib
 from email.message import EmailMessage
@@ -82,8 +81,45 @@ def send_code(request: SendCodeRequest, db: Session = Depends(get_db)):
             status_code=400,
             detail="학번 9자리 형식의 학교 이메일만 사용할 수 있습니다.",
         )
+    
+    email_student_id = request.email.split("@")[0]
 
-    code = str(random.randint(100000, 999999))
+    
+
+    if email_student_id != request.studentId:
+        raise HTTPException(
+            status_code=400,
+            detail="입력한 학번과 학교 이메일이 일치하지 않습니다.",
+        )
+    
+    recent_verification = (
+        db.query(EmailVerification)
+        .filter(
+            EmailVerification.student_id == request.studentId,
+            EmailVerification.email == request.email,
+        )
+        .order_by(EmailVerification.created_at.desc())
+        .first()
+    )
+
+    if recent_verification:
+        recent_created = recent_verification.created_at
+
+        if recent_created.tzinfo is None:
+            recent_created = recent_created.replace(tzinfo=timezone.utc)
+
+        seconds = (datetime.now(timezone.utc) - recent_created).total_seconds()
+
+        if seconds < 60:
+            raise HTTPException(
+                status_code=429,
+                detail="인증번호는 1분 뒤 다시 요청해주세요.",
+            )
+
+    code = str(secrets.randbelow(900000) + 100000)
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+
+    code = str(secrets.randbelow(900000) + 100000)
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
 
     verification = EmailVerification(
