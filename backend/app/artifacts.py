@@ -13,6 +13,8 @@ class ArtifactStore(Protocol):
 
     def get_bytes(self, key: str) -> bytes: ...
 
+    def exists(self, key: str) -> bool: ...
+
 
 class LocalArtifactStore:
     def __init__(self, root: str) -> None:
@@ -27,6 +29,9 @@ class LocalArtifactStore:
 
     def get_bytes(self, key: str) -> bytes:
         return self._path_for(key).read_bytes()
+
+    def exists(self, key: str) -> bool:
+        return self._path_for(key).is_file()
 
     def _path_for(self, key: str) -> Path:
         normalized = PurePosixPath(key)
@@ -62,6 +67,14 @@ class S3ArtifactStore:
     def get_bytes(self, key: str) -> bytes:
         response = self._client.get_object(Bucket=self._bucket_name, Key=key)
         return response["Body"].read()
+
+    def exists(self, key: str) -> bool:
+        response = self._client.list_objects_v2(
+            Bucket=self._bucket_name,
+            Prefix=key,
+            MaxKeys=1,
+        )
+        return any(item["Key"] == key for item in response.get("Contents", []))
 
 
 _artifact_store: ArtifactStore | None = None

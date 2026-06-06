@@ -24,7 +24,7 @@ from fastapi.testclient import TestClient
 
 from backend.app.database import Base, SessionLocal, engine, init_db
 from backend.app.main import app
-from backend.app.artifacts import get_json, get_text
+from backend.app.artifacts import S3ArtifactStore, get_json, get_text
 from backend.app.models import (
     Course,
     CourseEnrollment,
@@ -40,6 +40,7 @@ from backend.app.models import (
 )
 from backend.app.queue.sqs import SqsQueueClient
 from backend.app.seed import seed_database, synchronize_execution_artifacts
+from backend.app.verify_storage import build_storage_report
 from scripts.load_test import TERMINAL_STATUSES as LOAD_TEST_TERMINAL_STATUSES
 from scripts.load_test import format_error as format_load_test_error
 from scripts.load_test import submit_and_wait
@@ -105,6 +106,12 @@ class HufsolveIntegrationTest(unittest.TestCase):
             self.assertIn("expected_output", testcases[0])
         finally:
             db.close()
+
+        report = build_storage_report()
+        self.assertTrue(report["ok"])
+        self.assertEqual(report["exams_without_course"], 0)
+        self.assertEqual(report["problems_without_active_artifact"], 0)
+        self.assertEqual(report["missing_object_keys"], [])
 
     def test_submission_source_and_result_are_stored_as_artifacts(self) -> None:
         source_code = "a, b = map(int, input().split())\nprint(a+b)"
@@ -295,6 +302,17 @@ class HufsolveIntegrationTest(unittest.TestCase):
 
         self.assertEqual(message.task_type, "sample_run")
         self.assertEqual(message.resource_id, 201)
+
+    def test_s3_artifact_exists_uses_exact_key_listing(self) -> None:
+        store = S3ArtifactStore.__new__(S3ArtifactStore)
+        store._bucket_name = "artifact-bucket"
+        store._client = FakeS3ListClient(
+            keys=["problems/1/versions/1/statement.json.backup"]
+        )
+        self.assertFalse(store.exists("problems/1/versions/1/statement.json"))
+
+        store._client = FakeS3ListClient(keys=["problems/1/versions/1/statement.json"])
+        self.assertTrue(store.exists("problems/1/versions/1/statement.json"))
 
     def test_api_creates_sample_run_and_worker_completes_it(self) -> None:
         with TestClient(app) as client:
@@ -537,6 +555,17 @@ class FakeSqsSendClient:
 
     def send_message(self, **kwargs: object) -> None:
         self.messages.append(kwargs)
+
+
+class FakeS3ListClient:
+    def __init__(self, keys: list[str]) -> None:
+        self.keys = keys
+
+    def list_objects_v2(self, **kwargs: object) -> dict[str, object]:
+        prefix = str(kwargs["Prefix"])
+        return {
+            "Contents": [{"Key": key} for key in self.keys if key.startswith(prefix)],
+        }
 
 
 class FakeLoadTestResponse:

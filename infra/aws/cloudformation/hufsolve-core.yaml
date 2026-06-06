@@ -302,6 +302,16 @@ Resources:
                 Resource: !GetAtt Database.MasterUserSecret.SecretArn
               - Effect: Allow
                 Action:
+                  - s3:ListBucket
+                Resource: !GetAtt ArtifactBucket.Arn
+                Condition:
+                  StringLike:
+                    s3:prefix:
+                      - problems/*
+                      - submissions/*
+                      - sample-runs/*
+              - Effect: Allow
+                Action:
                   - s3:GetObject
                 Resource: !Sub ${ArtifactBucket.Arn}/problems/*/versions/*/statement.json
               - Effect: Allow
@@ -359,6 +369,16 @@ Resources:
                 Action:
                   - secretsmanager:GetSecretValue
                 Resource: !GetAtt Database.MasterUserSecret.SecretArn
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !GetAtt ArtifactBucket.Arn
+                Condition:
+                  StringLike:
+                    s3:prefix:
+                      - problems/*
+                      - submissions/*
+                      - sample-runs/*
               - Effect: Allow
                 Action:
                   - s3:GetObject

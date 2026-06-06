@@ -52,3 +52,11 @@ python -m backend.app.bootstrap
 로컬에서는 `ARTIFACT_BACKEND=local`과 `ARTIFACT_LOCAL_DIR=./tmp/artifacts`를 사용합니다. AWS에서는 `ARTIFACT_BACKEND=s3`와 `S3_BUCKET_NAME`을 사용합니다.
 
 CloudFormation UserData와 `scripts/aws/bootstrap-api.sh`, `scripts/aws/bootstrap-worker.sh`는 동일하게 AWS에서 `ARTIFACT_BACKEND=s3`를 설정합니다. API bootstrap만 schema 생성과 기존 데이터 이전을 수행하고 Worker는 생성된 schema와 artifact를 사용합니다.
+
+Bootstrap 이후 API 인스턴스에서 다음 명령을 실행하면 새 관계형 테이블 수, 시험-과목 연결 누락, 문제 artifact 누락, 실제 S3 객체 누락을 검증할 수 있습니다. 객체 본문을 읽지 않고 제한된 S3 prefix의 key 존재 여부만 확인합니다.
+
+```bash
+python -m backend.app.verify_storage
+```
+
+보고서의 `ok`가 `true`일 때만 저장소 구성이 완료된 것으로 판단합니다.
