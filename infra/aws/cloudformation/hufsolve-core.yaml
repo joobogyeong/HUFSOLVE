@@ -132,11 +132,46 @@ Resources:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
               SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: AbortIncompleteMultipartUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+          - Id: ExpireSampleRunArtifacts
+            Status: Enabled
+            Prefix: sample-runs/
+            ExpirationInDays: 30
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 30
+
+  ArtifactBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ArtifactBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource:
+              - !GetAtt ArtifactBucket.Arn
+              - !Sub ${ArtifactBucket.Arn}/*
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
 
   ApiLogGroup:
     Type: AWS::Logs::LogGroup
@@ -267,8 +302,25 @@ Resources:
                 Resource: !GetAtt Database.MasterUserSecret.SecretArn
               - Effect: Allow
                 Action:
+                  - s3:ListBucket
+                Resource: !GetAtt ArtifactBucket.Arn
+                Condition:
+                  StringLike:
+                    s3:prefix:
+                      - problems/*
+                      - submissions/*
+                      - sample-runs/*
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource: !Sub ${ArtifactBucket.Arn}/problems/*/versions/*/statement.json
+              - Effect: Allow
+                Action:
                   - s3:PutObject
-                Resource: !Sub ${ArtifactBucket.Arn}/*
+                Resource:
+                  - !Sub ${ArtifactBucket.Arn}/problems/*
+                  - !Sub ${ArtifactBucket.Arn}/submissions/*
+                  - !Sub ${ArtifactBucket.Arn}/sample-runs/*
 
   WorkerInstanceRole:
     Type: AWS::IAM::Role
@@ -319,9 +371,27 @@ Resources:
                 Resource: !GetAtt Database.MasterUserSecret.SecretArn
               - Effect: Allow
                 Action:
+                  - s3:ListBucket
+                Resource: !GetAtt ArtifactBucket.Arn
+                Condition:
+                  StringLike:
+                    s3:prefix:
+                      - problems/*
+                      - submissions/*
+                      - sample-runs/*
+              - Effect: Allow
+                Action:
                   - s3:GetObject
+                Resource:
+                  - !Sub ${ArtifactBucket.Arn}/problems/*
+                  - !Sub ${ArtifactBucket.Arn}/submissions/*
+                  - !Sub ${ArtifactBucket.Arn}/sample-runs/*
+              - Effect: Allow
+                Action:
                   - s3:PutObject
-                Resource: !Sub ${ArtifactBucket.Arn}/*
+                Resource:
+                  - !Sub ${ArtifactBucket.Arn}/submissions/*
+                  - !Sub ${ArtifactBucket.Arn}/sample-runs/*
 
   ApiInstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -451,11 +521,13 @@ Resources:
             QUEUE_BACKEND=sqs
             AWS_REGION=${AWS::Region}
             SQS_QUEUE_URL=${JudgeQueue}
+            ARTIFACT_BACKEND=s3
             S3_BUCKET_NAME=${ArtifactBucket}
-            AUTO_CREATE_TABLES=true
-            AUTO_SEED=true
+            AUTO_CREATE_TABLES=false
+            AUTO_SEED=false
             ENV
             rm -f /tmp/hufsolve-database-url
+            python3.11 -m backend.app.bootstrap --seed-if-empty
             touch /var/log/hufsolve-api.log
             cat >/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json <<'CWAGENT'
             {
@@ -566,6 +638,7 @@ Resources:
             QUEUE_BACKEND=sqs
             AWS_REGION=${AWS::Region}
             SQS_QUEUE_URL=${JudgeQueue}
+            ARTIFACT_BACKEND=s3
             S3_BUCKET_NAME=${ArtifactBucket}
             WORKER_MAX_RECEIVE_COUNT=3
             JUDGE_DOCKER_IMAGE=$JUDGE_DOCKER_IMAGE

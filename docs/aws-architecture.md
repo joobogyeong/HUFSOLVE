@@ -92,7 +92,7 @@ EC2 key pair는 선택 사항이며, 기본 운영 접근은 SSM Session Manager
 
 ## Queue Message Contracts
 
-실제 source code와 testcase는 SQS에 넣지 않습니다. DB가 source of truth입니다.
+실제 source code와 testcase는 SQS에 넣지 않습니다. RDS는 상태와 S3 key의 source of truth이고, S3는 코드와 testcase 본문의 source of truth입니다.
 
 ```json
 { "submission_id": 101 }
@@ -116,4 +116,4 @@ EC2 key pair는 선택 사항이며, 기본 운영 접근은 SSM Session Manager
 
 이 템플릿은 API 서버와 Worker를 EC2 Auto Scaling Group으로 배치하고, API는 ALB 뒤에 두며, Worker는 SQS queue length alarm을 기준으로 scale out/in합니다. 자세한 배포 명령은 `infra/aws/README.md`를 확인합니다.
 
-RDS password는 Secrets Manager에서 생성하고 API/Worker EC2 role이 부팅 시 조회합니다. Worker bootstrap은 ECR runner 이미지를 우선 pull하고, 최초 배포처럼 repository가 비어 있으면 로컬 빌드로 기동합니다. API/Worker 로그는 CloudWatch Agent를 통해 각각의 log group으로 전송하며, S3 artifact bucket은 향후 source code와 대용량 testcase 저장 경로로 사용할 수 있습니다. CloudWatch dashboard에서는 SQS backlog와 Worker ASG capacity를 함께 확인합니다.
+RDS password는 Secrets Manager에서 생성하고 API/Worker EC2 role이 부팅 시 조회합니다. API bootstrap은 새 관계형 테이블을 만들고 기존 시험 데이터를 정규화한 뒤 문제 artifact를 S3에 생성합니다. Worker bootstrap은 ECR runner 이미지를 우선 pull하고, 최초 배포처럼 repository가 비어 있으면 로컬 빌드로 기동합니다. API/Worker 로그는 CloudWatch Agent를 통해 각각의 log group으로 전송하며, S3 artifact bucket은 source code, testcase, 상세 실행 결과의 저장 경로로 사용합니다. CloudWatch dashboard에서는 SQS backlog와 Worker ASG capacity를 함께 확인합니다.

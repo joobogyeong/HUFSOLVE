@@ -8,7 +8,7 @@ set -euo pipefail
 : "${DATABASE_HOST:=}"
 : "${DATABASE_NAME:=hufsolve}"
 : "${SQS_QUEUE_URL:?SQS_QUEUE_URL is required}"
-: "${S3_BUCKET_NAME:=}"
+: "${S3_BUCKET_NAME:?S3_BUCKET_NAME is required}"
 : "${FRONTEND_ORIGIN:=http://localhost:5173}"
 : "${AWS_REGION:=ap-northeast-2}"
 : "${CLOUDWATCH_LOG_GROUP:=}"
@@ -56,10 +56,13 @@ DATABASE_URL=${DATABASE_URL}
 QUEUE_BACKEND=sqs
 AWS_REGION=${AWS_REGION}
 SQS_QUEUE_URL=${SQS_QUEUE_URL}
+ARTIFACT_BACKEND=s3
 S3_BUCKET_NAME=${S3_BUCKET_NAME}
-AUTO_CREATE_TABLES=true
-AUTO_SEED=true
+AUTO_CREATE_TABLES=false
+AUTO_SEED=false
 ENV
+
+python3.11 -m backend.app.bootstrap --seed-if-empty
 
 touch /var/log/hufsolve-api.log
 

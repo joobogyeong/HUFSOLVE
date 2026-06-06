@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from ..artifact_service import load_problem_statement, store_sample_run_source
 from ..database import get_db
 from ..models import Problem, SampleRun
 from ..queue.factory import get_queue_client
@@ -20,10 +21,12 @@ def create_sample_run(
     if problem is None:
         raise HTTPException(status_code=404, detail="Problem not found")
 
-    if request.sample_index >= len(problem.samples):
+    statement = load_problem_statement(problem)
+    samples = statement["samples"]
+    if request.sample_index >= len(samples):
         raise HTTPException(status_code=400, detail="Sample index out of range")
 
-    sample = problem.samples[request.sample_index]
+    sample = samples[request.sample_index]
     sample_run = SampleRun(
         problem_id=problem.id,
         language=request.language,
@@ -34,6 +37,8 @@ def create_sample_run(
         status="PENDING",
     )
     db.add(sample_run)
+    db.flush()
+    store_sample_run_source(sample_run, request.source_code)
     db.commit()
     db.refresh(sample_run)
 
