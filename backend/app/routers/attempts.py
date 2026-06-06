@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session, joinedload
 from ..database import get_db
 from ..models import Exam, ExamAttempt, Submission
 from ..schemas import ExamAttemptCreate, ExamAttemptRead
+from ..seed import enroll_student_for_exam
 
 router = APIRouter(tags=["exam-attempts"])
 
@@ -53,6 +54,7 @@ def create_exam_attempt(
         total_problems=total_problems,
     )
     db.add(attempt)
+    enroll_student_for_exam(db, exam, request.student_id, request.student_name)
     db.commit()
     db.refresh(attempt)
     return ExamAttemptRead.from_model(attempt)

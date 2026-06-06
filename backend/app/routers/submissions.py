@@ -3,10 +3,12 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from ..artifact_service import store_submission_source
 from ..database import get_db
 from ..models import Problem, Submission
 from ..queue.factory import get_queue_client
 from ..schemas import SubmissionCreate, SubmissionCreated, SubmissionRead
+from ..seed import enroll_student_for_exam
 
 router = APIRouter(tags=["submissions"])
 
@@ -32,6 +34,15 @@ def create_submission(
         total_count=total_count,
     )
     db.add(submission)
+    db.flush()
+    store_submission_source(submission, request.source_code)
+    if request.student_id:
+        enroll_student_for_exam(
+            db,
+            problem.exam,
+            request.student_id,
+            request.student_name or request.student_id,
+        )
     db.commit()
     db.refresh(submission)
 

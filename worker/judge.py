@@ -2,8 +2,15 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
+from backend.app.artifact_service import (
+    load_problem_testcases,
+    load_sample_run_source,
+    load_submission_source,
+    store_sample_run_result,
+    store_submission_result,
+)
 from backend.app.database import SessionLocal
-from backend.app.models import SampleRun, Submission, Testcase
+from backend.app.models import SampleRun, Submission
 from worker.docker_runner import run_python_code
 
 TERMINAL_STATUSES = {
@@ -55,12 +62,8 @@ def _judge_submission(db: Session, submission_id: int) -> None:
         return
 
     problem = submission.problem
-    testcases = (
-        db.query(Testcase)
-        .filter(Testcase.problem_id == submission.problem_id)
-        .order_by(Testcase.id.asc())
-        .all()
-    )
+    source_code = load_submission_source(submission)
+    testcases = load_problem_testcases(problem)
 
     if not testcases:
         raise RuntimeError(f"Problem {submission.problem_id} has no testcases")
@@ -74,11 +77,12 @@ def _judge_submission(db: Session, submission_id: int) -> None:
     max_execution_time_ms = 0
     final_status = "ACCEPTED"
     error_message: str | None = None
+    testcase_results: list[dict[str, object]] = []
 
     for testcase in testcases:
         result = run_python_code(
-            source_code=submission.source_code,
-            input_data=testcase.input_data,
+            source_code=source_code,
+            input_data=str(testcase["input"]),
             time_limit_ms=problem.time_limit_ms,
             memory_limit_mb=problem.memory_limit_mb,
         )
@@ -94,20 +98,41 @@ def _judge_submission(db: Session, submission_id: int) -> None:
         }:
             final_status = status
             error_message = str(result.get("stderr") or status)
+            testcase_results.append(
+                _testcase_result(testcase, result, passed=False, message=error_message)
+            )
             break
 
         user_output = normalize_output(str(result.get("stdout", "")))
-        expected_output = normalize_output(testcase.expected_output)
+        expected_output = normalize_output(str(testcase["expected_output"]))
 
         if user_output == expected_output:
             passed_count += 1
+            testcase_results.append(_testcase_result(testcase, result, passed=True))
             continue
 
         final_status = "WRONG_ANSWER"
         error_message = "Wrong answer"
+        testcase_results.append(
+            _testcase_result(testcase, result, passed=False, message=error_message)
+        )
         break
 
     score = int((passed_count / len(testcases)) * 100)
+    store_submission_result(
+        submission,
+        {
+            "submission_id": submission.id,
+            "problem_id": submission.problem_id,
+            "status": final_status,
+            "score": score,
+            "passed_count": passed_count,
+            "total_count": len(testcases),
+            "execution_time_ms": max_execution_time_ms,
+            "error_message": error_message,
+            "testcase_results": testcase_results,
+        },
+    )
 
     submission.status = final_status
     submission.score = score
@@ -132,7 +157,7 @@ def _judge_sample_run(db: Session, sample_run_id: int) -> None:
     db.commit()
 
     result = run_python_code(
-        source_code=sample_run.source_code,
+        source_code=load_sample_run_source(sample_run),
         input_data=sample_run.input_data,
         time_limit_ms=sample_run.problem.time_limit_ms,
         memory_limit_mb=sample_run.problem.memory_limit_mb,
@@ -143,6 +168,18 @@ def _judge_sample_run(db: Session, sample_run_id: int) -> None:
     sample_run.execution_time_ms = int(result.get("execution_time_ms", 0))
     sample_run.memory_mb = 0
     sample_run.status = "COMPLETED" if status == "OK" else status
+    store_sample_run_result(
+        sample_run,
+        {
+            "sample_run_id": sample_run.id,
+            "problem_id": sample_run.problem_id,
+            "sample_index": sample_run.sample_index,
+            "status": sample_run.status,
+            "stdout": sample_run.stdout,
+            "stderr": sample_run.stderr,
+            "execution_time_ms": sample_run.execution_time_ms,
+        },
+    )
     db.commit()
 
 
@@ -176,3 +213,21 @@ def _mark_system_error(db: Session, submission_id: int, message: str) -> None:
     submission.status = "SYSTEM_ERROR"
     submission.error_message = message[:2000]
     db.commit()
+
+
+def _testcase_result(
+    testcase: dict[str, object],
+    result: dict[str, object],
+    passed: bool,
+    message: str | None = None,
+) -> dict[str, object]:
+    return {
+        "testcase_id": testcase.get("id"),
+        "is_hidden": bool(testcase.get("is_hidden", True)),
+        "passed": passed,
+        "status": str(result["status"]),
+        "execution_time_ms": int(result.get("execution_time_ms", 0)),
+        "stdout": str(result.get("stdout", "")),
+        "stderr": str(result.get("stderr", "")),
+        "message": message,
+    }

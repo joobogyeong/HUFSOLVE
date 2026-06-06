@@ -17,14 +17,29 @@ os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH.as_posix()}"
 os.environ["QUEUE_BACKEND"] = "local"
 os.environ["AUTO_CREATE_TABLES"] = "true"
 os.environ["AUTO_SEED"] = "true"
+os.environ["ARTIFACT_BACKEND"] = "local"
+os.environ["ARTIFACT_LOCAL_DIR"] = str(Path(TEST_DIR.name) / "artifacts")
 
 from fastapi.testclient import TestClient
 
 from backend.app.database import Base, SessionLocal, engine, init_db
 from backend.app.main import app
-from backend.app.models import Problem, SampleRun, Submission
+from backend.app.artifacts import get_json, get_text
+from backend.app.models import (
+    Course,
+    CourseEnrollment,
+    CourseProfessor,
+    ExamCourse,
+    Problem,
+    ProblemArtifact,
+    Professor,
+    SampleRun,
+    Student,
+    Submission,
+    User,
+)
 from backend.app.queue.sqs import SqsQueueClient
-from backend.app.seed import seed_database
+from backend.app.seed import seed_database, synchronize_execution_artifacts
 from scripts.load_test import TERMINAL_STATUSES as LOAD_TEST_TERMINAL_STATUSES
 from scripts.load_test import format_error as format_load_test_error
 from scripts.load_test import submit_and_wait
@@ -70,6 +85,101 @@ class HufsolveIntegrationTest(unittest.TestCase):
             status_response = client.get(f"/submissions/{submission_id}")
             self.assertEqual(status_response.status_code, 200)
             self.assertEqual(status_response.json()["status"], "PENDING")
+
+    def test_seed_creates_normalized_reference_tables_and_problem_artifacts(self) -> None:
+        db = SessionLocal()
+        try:
+            self.assertEqual(db.query(User).filter(User.role == "PROFESSOR").count(), 2)
+            self.assertEqual(db.query(Professor).count(), 2)
+            self.assertEqual(db.query(Student).count(), 0)
+            self.assertEqual(db.query(Course).count(), 2)
+            self.assertEqual(db.query(CourseProfessor).count(), 2)
+            self.assertEqual(db.query(ExamCourse).count(), 2)
+            self.assertEqual(db.query(ProblemArtifact).count(), db.query(Problem).count())
+
+            artifact = db.query(ProblemArtifact).order_by(ProblemArtifact.problem_id).first()
+            statement = get_json(artifact.statement_s3_key)
+            testcases = get_json(artifact.testcases_s3_key)
+            self.assertIn("starter_code", statement)
+            self.assertGreater(len(testcases), 0)
+            self.assertIn("expected_output", testcases[0])
+        finally:
+            db.close()
+
+    def test_submission_source_and_result_are_stored_as_artifacts(self) -> None:
+        source_code = "a, b = map(int, input().split())\nprint(a+b)"
+        with TestClient(app) as client:
+            problem_id = client.get("/exams").json()[0]["problems"][0]["id"]
+            response = client.post(
+                "/submissions",
+                json={
+                    "problemId": problem_id,
+                    "language": "python",
+                    "sourceCode": source_code,
+                },
+            )
+            submission_id = response.json()["submissionId"]
+
+        db = SessionLocal()
+        try:
+            submission = db.get(Submission, submission_id)
+            self.assertNotEqual(submission.source_code, source_code)
+            self.assertEqual(get_text(submission.artifact.source_s3_key), source_code)
+        finally:
+            db.close()
+
+        def fake_run_python_code(
+            source_code: str,
+            input_data: str,
+            time_limit_ms: int | None = None,
+            memory_limit_mb: int | None = None,
+        ) -> dict[str, object]:
+            a, b = [int(part) for part in input_data.split()]
+            return {
+                "status": "OK",
+                "stdout": str(a + b),
+                "stderr": "",
+                "execution_time_ms": 7,
+            }
+
+        with patch("worker.judge.run_python_code", side_effect=fake_run_python_code):
+            judge_submission(submission_id)
+
+        db = SessionLocal()
+        try:
+            submission = db.get(Submission, submission_id)
+            result = get_json(submission.artifact.result_s3_key)
+            self.assertEqual(result["submission_id"], submission_id)
+            self.assertEqual(result["status"], "ACCEPTED")
+        finally:
+            db.close()
+
+    def test_existing_submission_source_is_migrated_to_artifact_storage(self) -> None:
+        source_code = "print('legacy')"
+        db = SessionLocal()
+        try:
+            problem = db.query(Problem).order_by(Problem.id.asc()).first()
+            submission = Submission(
+                exam_id=problem.exam_id,
+                problem_id=problem.id,
+                language="python",
+                source_code=source_code,
+                status="ACCEPTED",
+                score=100,
+            )
+            db.add(submission)
+            db.commit()
+
+            synchronize_execution_artifacts(db)
+            db.commit()
+            db.refresh(submission)
+
+            self.assertNotEqual(submission.source_code, source_code)
+            self.assertEqual(get_text(submission.artifact.source_s3_key), source_code)
+            result = get_json(submission.artifact.result_s3_key)
+            self.assertTrue(result["migrated_summary"])
+        finally:
+            db.close()
 
     def test_local_queue_claims_each_pending_submission_once(self) -> None:
         first_id = self._create_pending_submission()
@@ -357,6 +467,16 @@ class HufsolveIntegrationTest(unittest.TestCase):
             )
             self.assertEqual(repeated.status_code, 201)
             self.assertEqual(repeated.json()["passedProblems"], 0)
+
+        db = SessionLocal()
+        try:
+            self.assertEqual(
+                db.query(Student).filter(Student.student_number == "20260001").count(),
+                1,
+            )
+            self.assertEqual(db.query(CourseEnrollment).count(), 1)
+        finally:
+            db.close()
 
     def _create_pending_submission(
         self,

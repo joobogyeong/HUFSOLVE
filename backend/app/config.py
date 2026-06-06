@@ -50,6 +50,9 @@ class Settings:
     queue_backend: str = os.getenv("QUEUE_BACKEND", "local").lower()
     aws_region: str = os.getenv("AWS_REGION", "ap-northeast-2")
     sqs_queue_url: str = os.getenv("SQS_QUEUE_URL", "")
+    artifact_backend: str = os.getenv("ARTIFACT_BACKEND", "local").lower()
+    artifact_local_dir: str = os.getenv("ARTIFACT_LOCAL_DIR", "./tmp/artifacts")
+    s3_bucket_name: str = os.getenv("S3_BUCKET_NAME", "")
 
     worker_poll_wait_seconds: int = _get_int("WORKER_POLL_WAIT_SECONDS", 10)
     worker_visibility_timeout_seconds: int = _get_int(

@@ -5,6 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .artifact_service import load_problem_statement
 from .models import Exam, ExamAttempt, Problem, SampleRun, Submission
 
 
@@ -33,6 +34,7 @@ class ProblemRead(CamelModel):
 
     @classmethod
     def from_model(cls, problem: Problem) -> "ProblemRead":
+        statement = load_problem_statement(problem)
         return cls(
             id=problem.id,
             title=problem.title,
@@ -40,12 +42,12 @@ class ProblemRead(CamelModel):
             points=problem.points,
             time_limit_ms=problem.time_limit_ms,
             memory_limit_mb=problem.memory_limit_mb,
-            description=problem.description,
-            input_description=problem.input_description,
-            output_description=problem.output_description,
-            constraints=problem.constraints,
-            samples=[SampleCase(**sample) for sample in problem.samples],
-            starter_code=problem.starter_code,
+            description=statement["description"],
+            input_description=statement["input_description"],
+            output_description=statement["output_description"],
+            constraints=statement["constraints"],
+            samples=[SampleCase(**sample) for sample in statement["samples"]],
+            starter_code=statement["starter_code"],
         )
 
 
