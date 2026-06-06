@@ -12,9 +12,53 @@ from ..models import EmailVerification
 
 import re
 
+import os
+import smtplib
+from email.message import EmailMessage
+
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 SCHOOL_EMAIL_DOMAIN = "hufs.ac.kr"
+
+def send_verification_email(to_email: str, code: str):
+    smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
+    smtp_port = int(os.getenv("SMTP_PORT", "587"))
+    smtp_user = os.getenv("SMTP_USER")
+    smtp_password = os.getenv("SMTP_PASSWORD")
+    smtp_from = os.getenv("SMTP_FROM", smtp_user)
+
+    print("SMTP_USER:", smtp_user)
+    print("SMTP_FROM:", smtp_from)
+    print("SMTP_PASSWORD_EXISTS:", bool(smtp_password))
+
+    if not smtp_user or not smtp_password:
+        raise HTTPException(
+            status_code=500,
+            detail="SMTP 설정이 누락되었습니다.",
+        )
+
+    message = EmailMessage()
+    message["Subject"] = "[HUFSOLVE] 학교 이메일 인증번호"
+    message["From"] = smtp_from
+    message["To"] = to_email
+    message.set_content(
+        f"""안녕하세요.
+
+HUFSOLVE 학교 이메일 인증번호는 아래와 같습니다.
+
+인증번호: {code}
+
+이 인증번호는 5분 동안 유효합니다.
+본인이 요청하지 않았다면 이 메일을 무시해주세요.
+"""
+    )
+
+    with smtplib.SMTP(smtp_host, smtp_port) as smtp:
+        smtp.starttls()
+        smtp.login(smtp_user, smtp_password)
+        smtp.send_message(message)
+
+    print(f"[SMTP 발송 완료] {to_email}")
 
 
 class SendCodeRequest(BaseModel):
@@ -56,6 +100,7 @@ def send_code(request: SendCodeRequest, db: Session = Depends(get_db)):
 
     # 실제 메일 전송 전까지는 백엔드 터미널에 인증번호 출력
     print(f"[HUFSOLVE 인증번호] {request.email}: {code}")
+    send_verification_email(request.email, code)
 
     return {"message": "인증번호가 발송되었습니다."}
 
