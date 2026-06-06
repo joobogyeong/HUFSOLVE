@@ -28,6 +28,9 @@ import {
   fetchExams,
   getSampleRun,
   getSubmission,
+  sendEmailCode,
+  verifyEmailCode,
+  checkEmailVerified,
 } from "./api";
 import type { SampleRunResult } from "./api";
 import type {
@@ -147,6 +150,7 @@ const makeFallbackResult = (problem: Problem, source: string): ProblemResult => 
   };
 };
 
+
 function App() {
   const [screen, setScreen] = useState<Screen>("login");
   const [studentId, setStudentId] = useState("");
@@ -167,6 +171,10 @@ function App() {
   const [availableExams, setAvailableExams] = useState<MockExam[]>(mockExams);
   const [isSampleRunning, setIsSampleRunning] = useState(false);
   const [isFinishingExam, setIsFinishingExam] = useState(false);
+  const [studentEmail, setStudentEmail] = useState("");
+  const [emailCode, setEmailCode] = useState("");
+  const [isEmailCodeSent, setIsEmailCodeSent] = useState(false);
+  const [isEmailVerified, setIsEmailVerified] = useState(false);
 
   const currentProblem = useMemo(
     () =>
@@ -211,14 +219,94 @@ function App() {
     };
   }, []);
 
-  const login = () => {
+  const sendVerificationCode = async () => {
+  const trimmedStudentId = studentId.trim();
+  const trimmedStudentName = studentName.trim();
+  const trimmedEmail = studentEmail.trim();
+
+  if (!trimmedStudentId || !trimmedStudentName || !trimmedEmail) {
+    setLoginNotice("학번, 이름, 학교 이메일을 모두 입력해주세요.");
+    return;
+  }
+
+  try {
+    await sendEmailCode({
+      studentId: trimmedStudentId,
+      studentName: trimmedStudentName,
+      email: trimmedEmail,
+    });
+
+    setIsEmailCodeSent(true);
+    setIsEmailVerified(false);
+    setLoginNotice("인증번호가 발송되었습니다.");
+  } catch {
+    setLoginNotice("인증번호 발송에 실패했습니다.");
+  }
+};
+
+const verifyCode = async () => {
+  try {
+    const result = await verifyEmailCode({
+      studentId: studentId.trim(),
+      email: studentEmail.trim(),
+      code: emailCode.trim(),
+    });
+
+    if (result.verified) {
+      setIsEmailVerified(true);
+      setLoginNotice("학교 이메일 인증이 완료되었습니다.");
+    }
+  } catch {
+    setLoginNotice("인증번호가 일치하지 않거나 만료되었습니다.");
+  }
+};
+
+  const login = async () => {
     const trimmedStudentId = studentId.trim();
     const trimmedStudentName = studentName.trim();
+    const trimmedEmail = studentEmail.trim();
 
     if (!trimmedStudentId || !trimmedStudentName) {
       setLoginNotice("학번과 이름을 모두 입력해주세요.");
       return;
     }
+    if (!trimmedEmail) {
+      setLoginNotice("학교 이메일을 입력해주세요.");
+      return;
+    }
+
+    if (!isEmailVerified) {
+      try {
+        const result = await checkEmailVerified({
+          studentId: trimmedStudentId,
+          email: studentEmail.trim(),
+        });
+
+        if (!isEmailVerified) {
+          try {
+            const result = await checkEmailVerified({
+              studentId: trimmedStudentId,
+              email: trimmedEmail,
+            });
+
+            if (!result.verified) {
+              setLoginNotice("학교 이메일 인증을 완료해주세요.");
+              return;
+            }
+
+            setIsEmailVerified(true);
+          } catch {
+            setLoginNotice("학교 이메일 인증 여부를 확인할 수 없습니다.");
+            return;
+          }
+        }
+
+        setIsEmailVerified(true);
+      } catch {
+        setLoginNotice("학교 이메일 인증 여부를 확인할 수 없습니다.");
+        return;
+      }
+}
 
     setStudentProfile({
       studentId: trimmedStudentId,
@@ -479,6 +567,14 @@ function App() {
           onLogin={login}
           onStudentIdChange={setStudentId}
           onStudentNameChange={setStudentName}
+          studentEmail={studentEmail}
+          emailCode={emailCode}
+          isEmailCodeSent={isEmailCodeSent}
+          isEmailVerified={isEmailVerified}
+          onStudentEmailChange={setStudentEmail}
+          onEmailCodeChange={setEmailCode}
+          onSendVerificationCode={sendVerificationCode}
+          onVerifyCode={verifyCode}
         />
       )}
 
@@ -528,15 +624,31 @@ interface LoginScreenProps {
   onLogin: () => void;
   onStudentIdChange: (value: string) => void;
   onStudentNameChange: (value: string) => void;
+  studentEmail: string;
+  emailCode: string;
+  isEmailCodeSent: boolean;
+  isEmailVerified: boolean;
+  onStudentEmailChange: (value: string) => void;
+  onEmailCodeChange: (value: string) => void;
+  onSendVerificationCode: () => void;
+  onVerifyCode: () => void;
 }
 
 function LoginScreen({
   notice,
   studentId,
   studentName,
+  studentEmail,
+  emailCode,
+  isEmailCodeSent,
+  isEmailVerified,
   onLogin,
   onStudentIdChange,
   onStudentNameChange,
+  onStudentEmailChange,
+  onEmailCodeChange,
+  onSendVerificationCode,
+  onVerifyCode,
 }: LoginScreenProps) {
   return (
     <main className="flex min-h-screen flex-col px-5 py-5 sm:px-8">
@@ -593,6 +705,40 @@ function LoginScreen({
               className="min-h-14 rounded-2xl border border-zinc-200 bg-white px-5 text-center text-lg font-bold text-zinc-950 outline-none transition placeholder:text-zinc-300 focus:border-zinc-950"
               placeholder="이름"
             />
+
+            <input
+              value={studentEmail}
+              onChange={(event) => onStudentEmailChange(event.target.value)}
+              className="min-h-14 rounded-2xl border border-zinc-200 bg-white px-5 text-center text-lg font-bold text-zinc-950 outline-none transition placeholder:text-zinc-300 focus:border-zinc-950"
+              placeholder="학교 이메일"
+            />
+
+            <button
+              type="button"
+              onClick={onSendVerificationCode}
+              className="inline-flex min-h-14 items-center justify-center gap-2 rounded-2xl border border-zinc-300 bg-white px-6 text-base font-bold text-zinc-950 transition hover:border-zinc-950"
+            >
+              인증번호 발송
+            </button>
+
+            {isEmailCodeSent && (
+              <>
+                <input
+                  value={emailCode}
+                  onChange={(event) => onEmailCodeChange(event.target.value)}
+                  className="min-h-14 rounded-2xl border border-zinc-200 bg-white px-5 text-center text-lg font-bold text-zinc-950 outline-none transition placeholder:text-zinc-300 focus:border-zinc-950"
+                  placeholder="인증번호"
+                />
+
+                <button
+                  type="button"
+                  onClick={onVerifyCode}
+                  className="inline-flex min-h-14 items-center justify-center gap-2 rounded-2xl border border-zinc-300 bg-white px-6 text-base font-bold text-zinc-950 transition hover:border-zinc-950"
+                >
+                  {isEmailVerified ? "인증 완료" : "인증 확인"}
+                </button>
+              </>
+            )}
 
             <button
               type="button"
