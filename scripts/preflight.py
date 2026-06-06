@@ -76,6 +76,7 @@ def file_check(path: str, required: bool = True) -> CheckResult:
 
 
 def run_checks(mode: str) -> list[CheckResult]:
+    docker_required = mode == "local"
     checks = [
         CheckResult(
             name="python",
@@ -83,11 +84,11 @@ def run_checks(mode: str) -> list[CheckResult]:
             detail=sys.version.split()[0],
             required=True,
         ),
-        command_check("docker-cli", ["docker", "--version"], required=True),
+        command_check("docker-cli", ["docker", "--version"], required=docker_required),
         command_check(
             "docker-daemon",
             ["docker", "info", "--format", "{{.ServerVersion}}"],
-            required=True,
+            required=docker_required,
         ),
         file_check("docker/python-runner/Dockerfile"),
         file_check("backend/requirements.txt"),

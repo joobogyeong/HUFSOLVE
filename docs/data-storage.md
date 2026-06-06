@@ -50,3 +50,5 @@ python -m backend.app.bootstrap
 ```
 
 로컬에서는 `ARTIFACT_BACKEND=local`과 `ARTIFACT_LOCAL_DIR=./tmp/artifacts`를 사용합니다. AWS에서는 `ARTIFACT_BACKEND=s3`와 `S3_BUCKET_NAME`을 사용합니다.
+
+CloudFormation UserData와 `scripts/aws/bootstrap-api.sh`, `scripts/aws/bootstrap-worker.sh`는 동일하게 AWS에서 `ARTIFACT_BACKEND=s3`를 설정합니다. API bootstrap만 schema 생성과 기존 데이터 이전을 수행하고 Worker는 생성된 schema와 artifact를 사용합니다.
