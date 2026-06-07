@@ -52,6 +52,7 @@ interface CreateSampleRunRequest {
   language: "python";
   sourceCode: string;
   sampleIndex?: number;
+  inputData?: string;
 }
 
 interface CreateSampleRunResponse {
@@ -131,7 +132,8 @@ async function request<T>(
     await wakeBackendIfConfigured();
   }
 
-  const maxAttempts = options.wakeBackend ? STARTUP_RETRY_ATTEMPTS : 1;
+  const shouldRetryStartup = Boolean(options.wakeBackend && WAKE_API_URL);
+  const maxAttempts = shouldRetryStartup ? STARTUP_RETRY_ATTEMPTS : 1;
 
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     try {
@@ -147,11 +149,11 @@ async function request<T>(
         return response.json() as Promise<T>;
       }
 
-      if (!options.wakeBackend || !isTransientStartupStatus(response.status)) {
+      if (!shouldRetryStartup || !isTransientStartupStatus(response.status)) {
         throw new Error(`API ${response.status}: ${path}`);
       }
     } catch (error) {
-      if (!options.wakeBackend || attempt === maxAttempts - 1) {
+      if (!shouldRetryStartup || attempt === maxAttempts - 1) {
         throw error;
       }
     }

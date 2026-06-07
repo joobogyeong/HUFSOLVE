@@ -73,6 +73,11 @@ const makeInitialAnswers = (exam: MockExam) =>
     exam.problems.map((problem) => [problem.id, problem.starterCode]),
   ) as Record<number, string>;
 
+const makeInitialRunInputs = (exam: MockExam) =>
+  Object.fromEntries(
+    exam.problems.map((problem) => [problem.id, problem.samples[0]?.input ?? ""]),
+  ) as Record<number, string>;
+
 const formatTime = (seconds: number) => {
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
@@ -106,6 +111,7 @@ const formatDuration = (seconds: number) => {
 };
 
 const EXAM_PAGE_SIZE = 20;
+const SAMPLE_RUN_POLL_ATTEMPTS = import.meta.env.VITE_WAKE_API_URL ? 90 : 15;
 
 const isTerminalStatus = (status: JudgeStatus) =>
   !["UNSUBMITTED", "PENDING", "RUNNING"].includes(status);
@@ -132,19 +138,23 @@ const reportButtonLabel = (history: ExamHistory) => {
   return "리포트 보기";
 };
 
-const formatSampleRunConsole = (result: SampleRunResult) =>
-  [
+const formatSampleRunConsole = (result: SampleRunResult) => {
+  const sections = [
     `상태: ${result.message}`,
     "",
     "입력",
     result.input,
     "",
     "출력",
-    result.stdout || result.stderr || "(출력 없음)",
-    "",
-    "예상 출력",
-    result.expectedOutput,
-  ].join("\n");
+    result.stdout || "(출력 없음)",
+  ];
+
+  if (result.stderr) {
+    sections.push("", "오류", result.stderr);
+  }
+
+  return sections.join("\n");
+};
 
 const makeFallbackResult = (problem: Problem, source: string): ProblemResult => {
   const normalized = source.replace(/\s/g, "");
@@ -177,6 +187,9 @@ function App() {
   const [currentProblemId, setCurrentProblemId] = useState(mockExam.problems[0].id);
   const [answers, setAnswers] = useState<Record<number, string>>(() =>
     makeInitialAnswers(mockExam),
+  );
+  const [runInputs, setRunInputs] = useState<Record<number, string>>(() =>
+    makeInitialRunInputs(mockExam),
   );
   const [problemResults, setProblemResults] = useState<Record<number, ProblemResult>>({});
   const [consoleOutput, setConsoleOutput] = useState("아직 실행한 결과가 없습니다.");
@@ -369,6 +382,7 @@ function App() {
     setHomeNotice("");
     setRoomCode(exam.roomCode);
     setAnswers(makeInitialAnswers(exam));
+    setRunInputs(makeInitialRunInputs(exam));
     setProblemResults({});
     setConsoleOutput("아직 실행한 결과가 없습니다.");
     setRemainingSeconds(exam.durationSeconds);
@@ -409,8 +423,12 @@ function App() {
     setAnswers((current) => ({ ...current, [problemId]: sourceCode }));
   };
 
+  const updateRunInput = (problemId: number, inputData: string) => {
+    setRunInputs((current) => ({ ...current, [problemId]: inputData }));
+  };
+
   const pollSampleRun = async (runId: number) => {
-    for (let attempt = 0; attempt < 90; attempt += 1) {
+    for (let attempt = 0; attempt < SAMPLE_RUN_POLL_ATTEMPTS; attempt += 1) {
       await wait(attempt === 0 ? 500 : 1000);
 
       const result = await getSampleRun(runId);
@@ -421,12 +439,19 @@ function App() {
       }
     }
 
-    setConsoleOutput("샘플 실행 결과 조회 시간이 초과되었습니다.");
+    setConsoleOutput(
+      [
+        "코드 실행 결과를 제한 시간 안에 받지 못했습니다.",
+        "",
+        "오답 여부와 관계없는 Worker 처리 지연입니다.",
+        "백엔드와 Worker 상태를 확인한 뒤 다시 실행해주세요.",
+      ].join("\n"),
+    );
   };
 
   const runSample = async () => {
     const source = answers[currentProblem.id] ?? "";
-    const sample = currentProblem.samples[0];
+    const inputData = runInputs[currentProblem.id] ?? currentProblem.samples[0]?.input ?? "";
     setIsSampleRunning(true);
     setConsoleOutput(`${currentProblem.title} 샘플 실행 접수 중...`);
 
@@ -436,29 +461,21 @@ function App() {
         language: "python",
         sourceCode: source,
         sampleIndex: 0,
+        inputData,
       });
       setConsoleOutput(
         `${currentProblem.title} 샘플 실행 ID ${created.runId}번이 생성되었습니다.\nWorker 실행 결과를 확인 중입니다.`,
       );
       await pollSampleRun(created.runId);
-    } catch {
-      const hasPrint = source.includes("print");
-      const hasInput = source.includes("input");
-      const output =
-        hasPrint && hasInput ? sample.output : "샘플을 실행했지만 출력이 예상값과 다릅니다.";
-
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "알 수 없는 오류";
       setConsoleOutput(
         [
-          "백엔드 API에 연결할 수 없어 프론트 mock 실행 결과를 표시했습니다.",
+          "코드 실행 요청 중 오류가 발생했습니다.",
           "",
-          "입력",
-          sample.input,
+          message,
           "",
-          "출력",
-          output,
-          "",
-          "예상 출력",
-          sample.output,
+          "백엔드와 Worker 상태를 확인한 뒤 다시 실행해주세요.",
         ].join("\n"),
       );
     } finally {
@@ -571,6 +588,7 @@ function App() {
           currentProblem={currentProblem}
           exam={activeExam}
           onChangeAnswer={updateAnswer}
+          onChangeRunInput={updateRunInput}
           onFinish={() => void finishExam("최종 제출")}
           isFinishingExam={isFinishingExam}
           onRun={runSample}
@@ -579,6 +597,7 @@ function App() {
           isSampleRunning={isSampleRunning}
           problemResults={problemResults}
           remainingSeconds={remainingSeconds}
+          runInput={runInputs[currentProblem.id] ?? currentProblem.samples[0]?.input ?? ""}
           totalScore={totalScore}
         />
       )}
@@ -944,6 +963,7 @@ interface ExamScreenProps {
   currentProblem: Problem;
   exam: MockExam;
   onChangeAnswer: (problemId: number, sourceCode: string) => void;
+  onChangeRunInput: (problemId: number, inputData: string) => void;
   onFinish: () => void;
   isFinishingExam: boolean;
   onRun: () => void;
@@ -952,6 +972,7 @@ interface ExamScreenProps {
   isSampleRunning: boolean;
   problemResults: Record<number, ProblemResult>;
   remainingSeconds: number;
+  runInput: string;
   totalScore: number;
 }
 
@@ -961,6 +982,7 @@ function ExamScreen({
   currentProblem,
   exam,
   onChangeAnswer,
+  onChangeRunInput,
   onFinish,
   isFinishingExam,
   onRun,
@@ -969,6 +991,7 @@ function ExamScreen({
   isSampleRunning,
   problemResults,
   remainingSeconds,
+  runInput,
   totalScore,
 }: ExamScreenProps) {
   return (
@@ -1059,10 +1082,12 @@ function ExamScreen({
               answer={answers[currentProblem.id] ?? ""}
               consoleOutput={consoleOutput}
               onAnswerChange={(value) => onChangeAnswer(currentProblem.id, value)}
+              onRunInputChange={(value) => onChangeRunInput(currentProblem.id, value)}
               onRun={onRun}
               onSubmit={onSubmitProblem}
               isSampleRunning={isSampleRunning}
               result={problemResults[currentProblem.id]}
+              runInput={runInput}
             />
           </div>
         </section>
@@ -1158,20 +1183,24 @@ interface CodeWorkspaceProps {
   answer: string;
   consoleOutput: string;
   onAnswerChange: (value: string) => void;
+  onRunInputChange: (value: string) => void;
   onRun: () => void;
   onSubmit: () => void;
   isSampleRunning: boolean;
   result?: ProblemResult;
+  runInput: string;
 }
 
 function CodeWorkspace({
   answer,
   consoleOutput,
   onAnswerChange,
+  onRunInputChange,
   onRun,
   onSubmit,
   isSampleRunning,
   result,
+  runInput,
 }: CodeWorkspaceProps) {
   return (
     <section className="flex min-h-[720px] flex-col gap-4 lg:min-h-0">
@@ -1209,6 +1238,24 @@ function CodeWorkspace({
           className="exam-scrollbar min-h-[420px] flex-1 border-0 bg-transparent p-5 text-[15px] leading-7 text-white outline-none placeholder:text-zinc-500"
           aria-label="코드 에디터"
         />
+        <div className="border-t border-white/10 p-4">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <label htmlFor="run-input" className="text-sm font-black text-white">
+              실행 입력
+            </label>
+            <span className="text-xs font-semibold text-zinc-400">
+              첫 번째 예제 입력으로 초기화됩니다.
+            </span>
+          </div>
+          <textarea
+            id="run-input"
+            value={runInput}
+            onChange={(event) => onRunInputChange(event.target.value)}
+            spellCheck={false}
+            className="exam-scrollbar min-h-24 w-full rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm leading-6 text-white outline-none transition focus:border-white/30"
+            aria-label="실행 입력"
+          />
+        </div>
       </div>
 
       <div className="glass-panel grid gap-4 rounded-3xl p-4 md:grid-cols-[0.8fr_1.2fr]">
