@@ -6,7 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from .artifact_service import load_problem_statement
-from .models import Exam, ExamAttempt, Problem, SampleRun, Submission
+from .models import Exam, ExamAttempt, LlmReport, Problem, SampleRun, Submission
 
 
 class CamelModel(BaseModel):
@@ -175,6 +175,9 @@ class ExamAttemptCreate(CamelModel):
 
 class ExamAttemptRead(CamelModel):
     id: str
+    attempt_id: int = Field(alias="attemptId")
+    report_id: int | None = Field(default=None, alias="reportId")
+    report_status: str | None = Field(default=None, alias="reportStatus")
     title: str
     room_code: str = Field(alias="roomCode")
     submitted_at: datetime = Field(alias="submittedAt")
@@ -187,6 +190,9 @@ class ExamAttemptRead(CamelModel):
     def from_model(cls, attempt: ExamAttempt) -> "ExamAttemptRead":
         return cls(
             id=f"history-{attempt.id}",
+            attempt_id=attempt.id,
+            report_id=attempt.llm_report.id if attempt.llm_report else None,
+            report_status=attempt.llm_report.status if attempt.llm_report else None,
             title=attempt.exam.title,
             room_code=attempt.exam.room_code,
             submitted_at=attempt.submitted_at,
@@ -194,6 +200,63 @@ class ExamAttemptRead(CamelModel):
             passed_problems=attempt.passed_problems,
             total_problems=attempt.total_problems,
             status=attempt.status,
+        )
+
+
+class ProblemReview(CamelModel):
+    problem_id: int = Field(alias="problemId")
+    title: str
+    status: str
+    score: int
+    feedback: str
+    missing_concepts: list[str] = Field(default_factory=list, alias="missingConcepts")
+    next_step: str = Field(alias="nextStep")
+
+
+class LlmReportRead(CamelModel):
+    report_id: int = Field(alias="reportId")
+    attempt_id: int = Field(alias="attemptId")
+    status: str
+    language: str
+    model_id: str = Field(alias="modelId")
+    summary: str | None
+    strengths: list[str]
+    weaknesses: list[str]
+    problem_reviews: list[ProblemReview] = Field(alias="problemReviews")
+    improvement_plan: list[str] = Field(alias="improvementPlan")
+    error_message: str | None = Field(alias="errorMessage")
+    created_at: datetime = Field(alias="createdAt")
+    updated_at: datetime = Field(alias="updatedAt")
+
+    @classmethod
+    def from_model(cls, report: LlmReport) -> "LlmReportRead":
+        return cls(
+            report_id=report.id,
+            attempt_id=report.exam_attempt_id,
+            status=report.status,
+            language=report.language,
+            model_id=report.model_id,
+            summary=report.summary,
+            strengths=report.strengths or [],
+            weaknesses=report.weaknesses or [],
+            problem_reviews=[
+                ProblemReview(
+                    problem_id=int(item.get("problemId", item.get("problem_id", 0))),
+                    title=str(item.get("title", "")),
+                    status=str(item.get("status", "")),
+                    score=int(item.get("score", 0)),
+                    feedback=str(item.get("feedback", "")),
+                    missing_concepts=list(
+                        item.get("missingConcepts", item.get("missing_concepts", []))
+                    ),
+                    next_step=str(item.get("nextStep", item.get("next_step", ""))),
+                )
+                for item in (report.problem_reviews or [])
+            ],
+            improvement_plan=report.improvement_plan or [],
+            error_message=report.error_message,
+            created_at=report.created_at,
+            updated_at=report.updated_at,
         )
 
 

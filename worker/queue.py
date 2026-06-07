@@ -7,8 +7,9 @@ from sqlalchemy.orm import Session
 
 from backend.app.config import settings
 from backend.app.database import SessionLocal
-from backend.app.models import SampleRun, Submission
+from backend.app.models import LlmReport, SampleRun, Submission
 from worker.judge import mark_sample_run_system_error, mark_submission_system_error
+from worker.review import mark_llm_report_system_error
 
 
 @dataclass(frozen=True)
@@ -23,6 +24,10 @@ class LocalWorkerQueue:
     def receive(self) -> WorkerMessage | None:
         db = SessionLocal()
         try:
+            llm_report = _claim_next_pending_llm_report(db)
+            if llm_report is not None:
+                return WorkerMessage(task_type="llm_report", resource_id=llm_report.id)
+
             sample_run = _claim_next_pending_sample_run(db)
             if sample_run is not None:
                 return WorkerMessage(task_type="sample_run", resource_id=sample_run.id)
@@ -66,11 +71,12 @@ class SqsWorkerQueue:
         message = messages[0]
         body = json.loads(message["Body"])
         task_type = str(body.get("task_type", "submission"))
-        resource_id = (
-            int(body["sample_run_id"])
-            if task_type == "sample_run"
-            else int(body["submission_id"])
-        )
+        if task_type == "sample_run":
+            resource_id = int(body["sample_run_id"])
+        elif task_type == "llm_report":
+            resource_id = int(body["report_id"])
+        else:
+            resource_id = int(body["submission_id"])
         return WorkerMessage(
             task_type=task_type,
             resource_id=resource_id,
@@ -126,6 +132,33 @@ def _claim_next_pending_submission(db: Session) -> Submission | None:
             return db.get(Submission, submission_id)
 
 
+def _claim_next_pending_llm_report(db: Session) -> LlmReport | None:
+    while True:
+        report_id = (
+            db.query(LlmReport.id)
+            .filter(LlmReport.status == "PENDING")
+            .order_by(LlmReport.created_at.asc(), LlmReport.id.asc())
+            .limit(1)
+            .scalar()
+        )
+
+        if report_id is None:
+            return None
+
+        claimed_count = (
+            db.query(LlmReport)
+            .filter(
+                LlmReport.id == report_id,
+                LlmReport.status == "PENDING",
+            )
+            .update({"status": "RUNNING"}, synchronize_session=False)
+        )
+        db.commit()
+
+        if claimed_count == 1:
+            return db.get(LlmReport, report_id)
+
+
 def _claim_next_pending_sample_run(db: Session) -> SampleRun | None:
     while True:
         sample_run_id = (
@@ -154,6 +187,10 @@ def _claim_next_pending_sample_run(db: Session) -> SampleRun | None:
 
 
 def _mark_system_error(message: WorkerMessage, exc: Exception) -> None:
+    if message.task_type == "llm_report":
+        mark_llm_report_system_error(message.resource_id, str(exc))
+        return
+
     if message.task_type == "sample_run":
         mark_sample_run_system_error(message.resource_id, str(exc))
         return

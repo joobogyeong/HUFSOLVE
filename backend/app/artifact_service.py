@@ -80,6 +80,7 @@ def load_problem_statement(problem: Problem) -> dict[str, Any]:
         statement = get_json(artifact.statement_s3_key)
         if not isinstance(statement, dict):
             raise RuntimeError(f"Invalid statement artifact for problem {problem.id}")
+        statement.setdefault("reference_solution", problem.reference_solution)
         return statement
 
     return problem_statement_payload(problem)
@@ -108,6 +109,7 @@ def problem_statement_payload(problem: Problem) -> dict[str, Any]:
         "constraints": problem.constraints,
         "samples": problem.samples,
         "starter_code": problem.starter_code,
+        "reference_solution": problem.reference_solution,
     }
 
 

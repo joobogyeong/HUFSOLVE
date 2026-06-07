@@ -30,3 +30,14 @@ class SqsQueueClient:
                 }
             ),
         )
+
+    def enqueue_llm_report(self, report_id: int) -> None:
+        self._client.send_message(
+            QueueUrl=settings.sqs_queue_url,
+            MessageBody=json.dumps(
+                {
+                    "task_type": "llm_report",
+                    "report_id": report_id,
+                }
+            ),
+        )

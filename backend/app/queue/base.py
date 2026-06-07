@@ -9,3 +9,6 @@ class QueueClient(Protocol):
 
     def enqueue_sample_run(self, sample_run_id: int) -> None:
         pass
+
+    def enqueue_llm_report(self, report_id: int) -> None:
+        pass

@@ -54,6 +54,20 @@ class Settings:
     artifact_local_dir: str = os.getenv("ARTIFACT_LOCAL_DIR", "./tmp/artifacts")
     s3_bucket_name: str = os.getenv("S3_BUCKET_NAME", "")
 
+    llm_review_enabled: bool = _get_bool("LLM_REVIEW_ENABLED", False)
+    bedrock_review_model_id: str = os.getenv(
+        "BEDROCK_REVIEW_MODEL_ID",
+        "openai.gpt-oss-120b-1:0",
+    )
+    bedrock_review_max_source_chars: int = _get_int(
+        "BEDROCK_REVIEW_MAX_SOURCE_CHARS",
+        12000,
+    )
+    bedrock_review_max_output_tokens: int = _get_int(
+        "BEDROCK_REVIEW_MAX_OUTPUT_TOKENS",
+        2500,
+    )
+
     worker_poll_wait_seconds: int = _get_int("WORKER_POLL_WAIT_SECONDS", 10)
     worker_visibility_timeout_seconds: int = _get_int(
         "WORKER_VISIBILITY_TIMEOUT_SECONDS",

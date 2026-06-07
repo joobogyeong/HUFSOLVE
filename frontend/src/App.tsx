@@ -26,6 +26,7 @@ import {
   createSubmission,
   fetchExamAttempts,
   fetchExams,
+  getReport,
   getSampleRun,
   getSubmission,
 } from "./api";
@@ -33,6 +34,7 @@ import type { SampleRunResult } from "./api";
 import type {
   ExamHistory,
   JudgeStatus,
+  LlmReport,
   MockExam,
   Problem,
   ProblemResult,
@@ -167,6 +169,9 @@ function App() {
   const [availableExams, setAvailableExams] = useState<MockExam[]>(mockExams);
   const [isSampleRunning, setIsSampleRunning] = useState(false);
   const [isFinishingExam, setIsFinishingExam] = useState(false);
+  const [selectedHistory, setSelectedHistory] = useState<ExamHistory | null>(null);
+  const [report, setReport] = useState<LlmReport | null>(null);
+  const [reportNotice, setReportNotice] = useState("");
 
   const currentProblem = useMemo(
     () =>
@@ -210,6 +215,45 @@ function App() {
       ignore = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (screen !== "report" || !selectedHistory?.reportId) {
+      return;
+    }
+
+    let ignore = false;
+    let timerId: number | undefined;
+
+    const load = async () => {
+      try {
+        const nextReport = await getReport(selectedHistory.reportId!);
+        if (ignore) {
+          return;
+        }
+        setReport(nextReport);
+        setReportNotice("");
+
+        if (["PENDING", "RUNNING"].includes(nextReport.status)) {
+          timerId = window.setTimeout(load, 2500);
+        }
+      } catch {
+        if (!ignore) {
+          setReportNotice("AI 리포트를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.");
+        }
+      }
+    };
+
+    setReport(null);
+    setReportNotice("");
+    void load();
+
+    return () => {
+      ignore = true;
+      if (timerId) {
+        window.clearTimeout(timerId);
+      }
+    };
+  }, [screen, selectedHistory]);
 
   const login = () => {
     const trimmedStudentId = studentId.trim();
@@ -314,6 +358,15 @@ function App() {
     setRemainingSeconds(exam.durationSeconds);
     setCurrentProblemId(exam.problems[0].id);
     setScreen("exam");
+  };
+
+  const openReport = (history: ExamHistory) => {
+    setSelectedHistory(history);
+    setReport(null);
+    setReportNotice(
+      history.reportId ? "" : "이 시험 기록에는 아직 연결된 AI 리포트가 없습니다.",
+    );
+    setScreen("report");
   };
 
   const startExam = () => {
@@ -515,7 +568,21 @@ function App() {
       )}
 
       {screen === "my" && (
-        <MyPage history={sortedHistory} onBackHome={() => setScreen("home")} />
+        <MyPage
+          history={sortedHistory}
+          onBackHome={() => setScreen("home")}
+          onOpenReport={openReport}
+        />
+      )}
+
+      {screen === "report" && selectedHistory && (
+        <ReportPage
+          history={selectedHistory}
+          notice={reportNotice}
+          report={report}
+          onBackMyPage={() => setScreen("my")}
+          onBackHome={() => setScreen("home")}
+        />
       )}
     </div>
   );
@@ -1182,9 +1249,11 @@ function Metric({ label, value }: { label: string; value: string }) {
 function MyPage({
   history,
   onBackHome,
+  onOpenReport,
 }: {
   history: ExamHistory[];
   onBackHome: () => void;
+  onOpenReport: (history: ExamHistory) => void;
 }) {
   return (
     <main className="min-h-screen px-5 py-5 sm:px-8">
@@ -1220,18 +1289,19 @@ function MyPage({
         </div>
 
         <div className="glass-panel overflow-hidden rounded-3xl">
-          <div className="grid grid-cols-[1.4fr_0.8fr_0.7fr_0.6fr] border-b border-zinc-200 px-5 py-4 text-sm font-black text-zinc-500 max-lg:hidden">
+          <div className="grid grid-cols-[1.35fr_0.75fr_0.65fr_0.5fr_0.55fr] border-b border-zinc-200 px-5 py-4 text-sm font-black text-zinc-500 max-lg:hidden">
             <span>시험</span>
             <span>제출 시간</span>
             <span>통과</span>
             <span className="text-right">점수</span>
+            <span className="text-right">리포트</span>
           </div>
 
           <div className="divide-y divide-zinc-200/80">
             {history.map((item) => (
               <div
                 key={item.id}
-                className="grid gap-4 px-5 py-5 lg:grid-cols-[1.4fr_0.8fr_0.7fr_0.6fr] lg:items-center"
+                className="grid gap-4 px-5 py-5 lg:grid-cols-[1.35fr_0.75fr_0.65fr_0.5fr_0.55fr] lg:items-center"
               >
                 <div>
                   <div className="text-lg font-black text-zinc-950">{item.title}</div>
@@ -1250,12 +1320,232 @@ function MyPage({
                     {item.score}점
                   </span>
                 </div>
+                <div className="lg:text-right">
+                  <button
+                    type="button"
+                    onClick={() => onOpenReport(item)}
+                    disabled={!item.reportId}
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-zinc-950 bg-white px-4 text-sm font-black text-zinc-950 transition hover:bg-zinc-950 hover:text-white disabled:cursor-not-allowed disabled:border-zinc-200 disabled:text-zinc-400 disabled:hover:bg-white"
+                  >
+                    <FileText className="h-4 w-4" />
+                    리포트 보기
+                  </button>
+                </div>
               </div>
             ))}
           </div>
         </div>
       </section>
     </main>
+  );
+}
+
+function ReportPage({
+  history,
+  notice,
+  report,
+  onBackMyPage,
+  onBackHome,
+}: {
+  history: ExamHistory;
+  notice: string;
+  report: LlmReport | null;
+  onBackMyPage: () => void;
+  onBackHome: () => void;
+}) {
+  const isWaiting = report?.status === "PENDING" || report?.status === "RUNNING";
+  const isCompleted = report?.status === "COMPLETED";
+  const isError = report?.status === "SYSTEM_ERROR";
+
+  return (
+    <main className="min-h-screen px-5 py-5 sm:px-8">
+      <header className="mx-auto flex w-full max-w-6xl items-center justify-between">
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={onBackMyPage}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-zinc-200 bg-white/70 px-4 text-sm font-black text-zinc-950 shadow-sm backdrop-blur transition hover:border-zinc-950"
+          >
+            <ClipboardList className="h-4 w-4" />
+            내 결과
+          </button>
+          <button
+            type="button"
+            onClick={onBackHome}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-zinc-200 bg-white/70 px-4 text-sm font-black text-zinc-950 shadow-sm backdrop-blur transition hover:border-zinc-950"
+          >
+            <Home className="h-4 w-4" />
+            홈
+          </button>
+        </div>
+        <div className="text-sm font-semibold tracking-[0.18em] text-zinc-500">
+          AI REPORT
+        </div>
+      </header>
+
+      <section className="mx-auto mt-12 w-full max-w-6xl">
+        <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white/65 px-4 py-2 text-sm font-bold text-zinc-600 backdrop-blur">
+              <FileText className="h-4 w-4" />
+              AI 학습 리포트
+            </div>
+            <h1 className="text-4xl font-black text-zinc-950 sm:text-5xl">
+              {history.title}
+            </h1>
+            <p className="mt-3 text-sm font-semibold text-zinc-500">
+              코드 {history.roomCode} · {formatDateTime(history.submittedAt)}
+            </p>
+          </div>
+          <div className="grid grid-cols-3 gap-3 text-center">
+            <div className="rounded-2xl border border-zinc-200 bg-white/70 px-4 py-3">
+              <div className="text-xs font-bold text-zinc-500">점수</div>
+              <div className="mt-1 text-2xl font-black">{history.score}점</div>
+            </div>
+            <div className="rounded-2xl border border-zinc-200 bg-white/70 px-4 py-3">
+              <div className="text-xs font-bold text-zinc-500">통과</div>
+              <div className="mt-1 text-2xl font-black">
+                {history.passedProblems}/{history.totalProblems}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-zinc-200 bg-white/70 px-4 py-3">
+              <div className="text-xs font-bold text-zinc-500">상태</div>
+              <div className="mt-1 text-sm font-black">
+                {report?.status ?? history.reportStatus ?? "조회중"}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {notice && (
+          <div className="mb-4 rounded-2xl border border-zinc-200 bg-white/75 px-5 py-4 text-sm font-bold text-zinc-600">
+            {notice}
+          </div>
+        )}
+
+        {!report && !notice && (
+          <ReportStatusPanel title="AI 리포트를 불러오는 중입니다." />
+        )}
+
+        {isWaiting && (
+          <ReportStatusPanel title="AI 리포트를 작성 중입니다." />
+        )}
+
+        {isError && (
+          <ReportStatusPanel
+            title="AI 리포트 생성에 실패했습니다."
+            message={report?.errorMessage ?? "채점 결과는 정상 저장되었지만 리포트 생성 중 문제가 발생했습니다."}
+          />
+        )}
+
+        {isCompleted && report && (
+          <div className="space-y-5">
+            <section className="glass-panel rounded-3xl p-6">
+              <h2 className="text-xl font-black">전체 요약</h2>
+              <p className="mt-4 whitespace-pre-wrap text-sm leading-7 text-zinc-700">
+                {report.summary}
+              </p>
+            </section>
+
+            <section className="grid gap-5 lg:grid-cols-2">
+              <ReportListCard title="잘한 점" items={report.strengths} />
+              <ReportListCard title="보완할 점" items={report.weaknesses} />
+            </section>
+
+            <section className="glass-panel rounded-3xl p-6">
+              <h2 className="text-xl font-black">문제별 코드 리뷰</h2>
+              <div className="mt-5 space-y-4">
+                {report.problemReviews.length === 0 ? (
+                  <p className="text-sm font-semibold text-zinc-500">
+                    아직 문제별 리뷰가 없습니다. 문제별 코드를 제출한 뒤 최종 제출하면 리뷰가 생성됩니다.
+                  </p>
+                ) : (
+                  report.problemReviews.map((review) => (
+                    <article
+                      key={`${review.problemId}-${review.title}`}
+                      className="rounded-2xl border border-zinc-200 bg-white/70 p-5"
+                    >
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <h3 className="text-lg font-black">
+                          문제 {review.problemId}. {review.title}
+                        </h3>
+                        <span className="inline-flex w-fit rounded-full bg-zinc-950 px-3 py-1 text-xs font-black text-white">
+                          {statusLabel[review.status as JudgeStatus] ?? review.status} · {review.score}점
+                        </span>
+                      </div>
+                      <p className="mt-4 whitespace-pre-wrap text-sm leading-7 text-zinc-700">
+                        {review.feedback}
+                      </p>
+                      {review.missingConcepts.length > 0 && (
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          {review.missingConcepts.map((concept) => (
+                            <span
+                              key={concept}
+                              className="rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs font-bold text-zinc-600"
+                            >
+                              {concept}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      <div className="mt-4 rounded-2xl bg-zinc-100 px-4 py-3 text-sm font-semibold leading-6 text-zinc-700">
+                        다음 단계: {review.nextStep}
+                      </div>
+                    </article>
+                  ))
+                )}
+              </div>
+            </section>
+
+            <ReportListCard title="추천 학습 계획" items={report.improvementPlan} />
+          </div>
+        )}
+      </section>
+    </main>
+  );
+}
+
+function ReportStatusPanel({
+  title,
+  message = "채점 결과와 제출 코드를 바탕으로 한국어 피드백을 생성하고 있습니다.",
+}: {
+  title: string;
+  message?: string;
+}) {
+  return (
+    <section className="glass-panel rounded-3xl p-8 text-center">
+      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-zinc-950 text-white">
+        <FileText className="h-5 w-5" />
+      </div>
+      <h2 className="mt-5 text-xl font-black">{title}</h2>
+      <p className="mt-2 text-sm font-semibold leading-6 text-zinc-500">{message}</p>
+    </section>
+  );
+}
+
+function ReportListCard({
+  title,
+  items,
+}: {
+  title: string;
+  items: string[];
+}) {
+  return (
+    <section className="glass-panel rounded-3xl p-6">
+      <h2 className="text-xl font-black">{title}</h2>
+      <ul className="mt-4 space-y-3">
+        {items.length === 0 ? (
+          <li className="text-sm font-semibold text-zinc-500">표시할 내용이 없습니다.</li>
+        ) : (
+          items.map((item) => (
+            <li key={item} className="flex gap-3 text-sm leading-6 text-zinc-700">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-zinc-950" />
+              <span>{item}</span>
+            </li>
+          ))
+        )}
+      </ul>
+    </section>
   );
 }
 
