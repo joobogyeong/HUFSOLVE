@@ -116,6 +116,22 @@ const wait = (milliseconds: number) =>
 const isTerminalSampleRunStatus = (status: SampleRunResult["status"]) =>
   !["PENDING", "RUNNING"].includes(status);
 
+const isReportGenerating = (status?: string | null) =>
+  status === "PENDING" || status === "RUNNING";
+
+const reportButtonLabel = (history: ExamHistory) => {
+  if (!history.reportId) {
+    return "리포트 없음";
+  }
+  if (isReportGenerating(history.reportStatus)) {
+    return "리포트 생성중";
+  }
+  if (history.reportStatus === "SYSTEM_ERROR") {
+    return "생성 실패";
+  }
+  return "리포트 보기";
+};
+
 const formatSampleRunConsole = (result: SampleRunResult) =>
   [
     `상태: ${result.message}`,
@@ -1324,11 +1340,11 @@ function MyPage({
                   <button
                     type="button"
                     onClick={() => onOpenReport(item)}
-                    disabled={!item.reportId}
+                    disabled={!item.reportId || isReportGenerating(item.reportStatus)}
                     className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-zinc-950 bg-white px-4 text-sm font-black text-zinc-950 transition hover:bg-zinc-950 hover:text-white disabled:cursor-not-allowed disabled:border-zinc-200 disabled:text-zinc-400 disabled:hover:bg-white"
                   >
                     <FileText className="h-4 w-4" />
-                    리포트 보기
+                    {reportButtonLabel(item)}
                   </button>
                 </div>
               </div>
