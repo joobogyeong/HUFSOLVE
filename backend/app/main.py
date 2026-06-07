@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .database import SessionLocal, init_db
-from .routers import attempts, exams, health, reports, runs, submissions
+from .routers import attempts, auth, exams, health, reports, runs, submissions
 from .seed import seed_database
 
 app = FastAPI(title=settings.app_name)
@@ -24,7 +24,7 @@ app.include_router(submissions.router)
 app.include_router(runs.router)
 app.include_router(attempts.router)
 app.include_router(reports.router)
-
+app.include_router(auth.router)
 
 @app.on_event("startup")
 def on_startup() -> None:
