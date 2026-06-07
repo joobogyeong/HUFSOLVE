@@ -72,3 +72,4 @@ infra/aws/parameters.local.json
 .terraform/
 .terraform.lock.hcl
 cdk.out/
+.vercel

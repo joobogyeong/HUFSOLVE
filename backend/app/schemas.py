@@ -125,6 +125,7 @@ class SampleRunCreate(CamelModel):
     language: Literal["python"] = "python"
     source_code: str = Field(alias="sourceCode", min_length=1, max_length=100_000)
     sample_index: int = Field(default=0, alias="sampleIndex", ge=0)
+    input_data: str | None = Field(default=None, alias="inputData", max_length=100_000)
 
 
 class SampleRunCreated(CamelModel):

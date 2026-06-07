@@ -32,7 +32,7 @@ def create_sample_run(
         language=request.language,
         source_code=request.source_code,
         sample_index=request.sample_index,
-        input_data=sample["input"],
+        input_data=request.input_data if request.input_data is not None else sample["input"],
         expected_output=sample["output"],
         status="PENDING",
     )

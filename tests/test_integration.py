@@ -315,6 +315,7 @@ class HufsolveIntegrationTest(unittest.TestCase):
         self.assertTrue(store.exists("problems/1/versions/1/statement.json"))
 
     def test_api_creates_sample_run_and_worker_completes_it(self) -> None:
+        custom_input = "10 20"
         with TestClient(app) as client:
             problem_id = client.get("/exams").json()[0]["problems"][0]["id"]
             run_response = client.post(
@@ -324,6 +325,7 @@ class HufsolveIntegrationTest(unittest.TestCase):
                     "language": "python",
                     "sourceCode": "a, b = map(int, input().split())\nprint(a+b)",
                     "sampleIndex": 0,
+                    "inputData": custom_input,
                 },
             )
             self.assertEqual(run_response.status_code, 202)
@@ -337,19 +339,43 @@ class HufsolveIntegrationTest(unittest.TestCase):
             "worker.judge.run_python_code",
             return_value={
                 "status": "OK",
-                "stdout": "3\n",
+                "stdout": "30\n",
                 "stderr": "",
                 "execution_time_ms": 9,
             },
-        ):
+        ) as run_code:
             judge_sample_run(run_id)
+            self.assertEqual(run_code.call_args.kwargs["input_data"], custom_input)
 
         with TestClient(app) as client:
             payload = client.get(f"/runs/{run_id}").json()
             self.assertEqual(payload["status"], "COMPLETED")
-            self.assertEqual(payload["input"], "1 2")
+            self.assertEqual(payload["input"], custom_input)
             self.assertEqual(payload["expectedOutput"], "3")
-            self.assertEqual(payload["stdout"], "3\n")
+            self.assertEqual(payload["stdout"], "30\n")
+
+    def test_api_preserves_empty_custom_run_input(self) -> None:
+        with TestClient(app) as client:
+            problem_id = client.get("/exams").json()[0]["problems"][0]["id"]
+            response = client.post(
+                "/runs",
+                json={
+                    "problemId": problem_id,
+                    "language": "python",
+                    "sourceCode": "print('no input required')",
+                    "sampleIndex": 0,
+                    "inputData": "",
+                },
+            )
+            self.assertEqual(response.status_code, 202)
+            run_id = response.json()["runId"]
+
+        db = SessionLocal()
+        try:
+            sample_run = db.get(SampleRun, run_id)
+            self.assertEqual(sample_run.input_data, "")
+        finally:
+            db.close()
 
     def test_api_rejects_out_of_range_sample_index(self) -> None:
         with TestClient(app) as client:
