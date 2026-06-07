@@ -81,11 +81,11 @@
   },
   {
     "ParameterKey": "BedrockReviewRegion",
-    "ParameterValue": "us-east-1"
+    "ParameterValue": "ap-northeast-2"
   },
   {
     "ParameterKey": "BedrockReviewModelId",
-    "ParameterValue": "openai.gpt-oss-120b-1:0"
+    "ParameterValue": "global.amazon.nova-2-lite-v1:0"
   },
   {
     "ParameterKey": "DbName",

@@ -80,23 +80,21 @@ def call_bedrock_review(prompt: str) -> dict[str, Any]:
         "bedrock-runtime",
         region_name=settings.bedrock_review_region,
     )
-    response = client.invoke_model(
+    response = client.converse(
         modelId=settings.bedrock_review_model_id,
-        body=json.dumps(
+        system=[{"text": REPORT_SYSTEM_PROMPT}],
+        messages=[
             {
-                "model": settings.bedrock_review_model_id,
-                "messages": [
-                    {"role": "system", "content": REPORT_SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt},
-                ],
-                "temperature": 0.2,
-                "max_completion_tokens": settings.bedrock_review_max_output_tokens,
-                "stream": False,
+                "role": "user",
+                "content": [{"text": prompt}],
             }
-        ),
+        ],
+        inferenceConfig={
+            "temperature": 0.2,
+            "maxTokens": settings.bedrock_review_max_output_tokens,
+        },
     )
-    response_body = json.loads(response["body"].read().decode("utf-8"))
-    content = response_body["choices"][0]["message"]["content"]
+    content = response["output"]["message"]["content"][0]["text"]
     return parse_report_json(str(content))
 
 

@@ -12,8 +12,8 @@ set -euo pipefail
 : "${FRONTEND_ORIGIN:=http://localhost:5173}"
 : "${AWS_REGION:=ap-northeast-2}"
 : "${LLM_REVIEW_ENABLED:=false}"
-: "${BEDROCK_REVIEW_REGION:=us-east-1}"
-: "${BEDROCK_REVIEW_MODEL_ID:=openai.gpt-oss-120b-1:0}"
+: "${BEDROCK_REVIEW_REGION:=ap-northeast-2}"
+: "${BEDROCK_REVIEW_MODEL_ID:=global.amazon.nova-2-lite-v1:0}"
 : "${CLOUDWATCH_LOG_GROUP:=}"
 
 dnf update -y

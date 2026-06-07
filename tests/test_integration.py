@@ -26,7 +26,7 @@ from fastapi.testclient import TestClient
 from backend.app.database import Base, SessionLocal, engine, init_db
 from backend.app.main import app
 from backend.app.artifacts import S3ArtifactStore, get_json, get_text
-from backend.app.llm_review import _load_attempt_submissions, build_review_prompt
+from backend.app.llm_review import _load_attempt_submissions, build_review_prompt, call_bedrock_review
 from backend.app.models import (
     Course,
     CourseEnrollment,
@@ -668,6 +668,43 @@ class HufsolveIntegrationTest(unittest.TestCase):
             self.assertIn("input", item["submittedCode"])
         finally:
             db.close()
+
+    def test_bedrock_review_uses_converse_payload_for_nova(self) -> None:
+        fake_client = MagicMock()
+        fake_client.converse.return_value = {
+            "output": {
+                "message": {
+                    "content": [
+                        {
+                            "text": json.dumps(
+                                {
+                                    "summary": "테스트 리포트입니다.",
+                                    "strengths": [],
+                                    "weaknesses": [],
+                                    "problemReviews": [],
+                                    "improvementPlan": [],
+                                },
+                                ensure_ascii=False,
+                            )
+                        }
+                    ]
+                }
+            }
+        }
+
+        with patch("boto3.client", return_value=fake_client) as boto3_client:
+            report = call_bedrock_review("{}")
+
+        boto3_client.assert_called_once_with(
+            "bedrock-runtime",
+            region_name="ap-northeast-2",
+        )
+        fake_client.converse.assert_called_once()
+        payload = fake_client.converse.call_args.kwargs
+        self.assertEqual(payload["modelId"], "global.amazon.nova-2-lite-v1:0")
+        self.assertEqual(payload["messages"][0]["content"][0]["text"], "{}")
+        self.assertEqual(payload["inferenceConfig"]["maxTokens"], 2500)
+        self.assertEqual(report["summary"], "테스트 리포트입니다.")
 
     def test_llm_report_uses_latest_submission_per_student_problem(self) -> None:
         first_id = self._create_pending_submission(
