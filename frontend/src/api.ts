@@ -230,3 +230,35 @@ export async function fetchExamAttempts(studentId: string): Promise<ExamHistory[
     `/exam-attempts?studentId=${encodeURIComponent(studentId)}`,
   );
 }
+
+export async function sendEmailCode(payload: {
+  studentId: string;
+  studentName: string;
+  email: string;
+}) {
+  return request<{ message: string }>("/auth/send-code", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function verifyEmailCode(payload: {
+  studentId: string;
+  email: string;
+  code: string;
+}) {
+  return request<{ verified: boolean }>("/auth/verify-code", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function checkEmailVerified(payload: {
+  studentId: string;
+  email: string;
+}) {
+  return request<{ verified: boolean }>("/auth/check-verified", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
