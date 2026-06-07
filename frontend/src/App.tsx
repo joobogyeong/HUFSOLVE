@@ -271,6 +271,23 @@ function App() {
         }
         setReport(nextReport);
         setReportNotice("");
+        setSelectedHistory((current) =>
+          current?.reportId === nextReport.reportId
+            && current.reportStatus !== nextReport.status
+            ? { ...current, reportStatus: nextReport.status }
+            : current,
+        );
+        setExamHistory((current) => {
+          let changed = false;
+          const nextHistory = current.map((item) => {
+            if (item.reportId !== nextReport.reportId || item.reportStatus === nextReport.status) {
+              return item;
+            }
+            changed = true;
+            return { ...item, reportStatus: nextReport.status };
+          });
+          return changed ? nextHistory : current;
+        });
 
         if (["PENDING", "RUNNING"].includes(nextReport.status)) {
           timerId = window.setTimeout(load, 2500);
@@ -293,6 +310,65 @@ function App() {
       }
     };
   }, [screen, selectedHistory]);
+
+  useEffect(() => {
+    if (screen !== "my") {
+      return;
+    }
+
+    const pendingReportIds = examHistory
+      .filter((item) => item.reportId && isReportGenerating(item.reportStatus))
+      .map((item) => item.reportId!);
+
+    if (pendingReportIds.length === 0) {
+      return;
+    }
+
+    let ignore = false;
+    let timerId: number | undefined;
+
+    const refreshPendingReports = async () => {
+      try {
+        const reports = await Promise.all(
+          pendingReportIds.map((reportId) => getReport(reportId)),
+        );
+
+        if (ignore) {
+          return;
+        }
+
+        setExamHistory((current) => {
+          let changed = false;
+          const nextHistory = current.map((item) => {
+            const nextReport = reports.find((candidate) => candidate.reportId === item.reportId);
+            if (!nextReport || item.reportStatus === nextReport.status) {
+              return item;
+            }
+            changed = true;
+            return { ...item, reportStatus: nextReport.status };
+          });
+          return changed ? nextHistory : current;
+        });
+
+        if (reports.some((item) => isReportGenerating(item.status))) {
+          timerId = window.setTimeout(refreshPendingReports, 2500);
+        }
+      } catch {
+        if (!ignore) {
+          timerId = window.setTimeout(refreshPendingReports, 5000);
+        }
+      }
+    };
+
+    void refreshPendingReports();
+
+    return () => {
+      ignore = true;
+      if (timerId) {
+        window.clearTimeout(timerId);
+      }
+    };
+  }, [screen, examHistory]);
 
   const sendVerificationCode = async () => {
     const trimmedStudentId = studentId.trim();
