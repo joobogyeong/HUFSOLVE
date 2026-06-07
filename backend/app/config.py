@@ -55,6 +55,7 @@ class Settings:
     s3_bucket_name: str = os.getenv("S3_BUCKET_NAME", "")
 
     llm_review_enabled: bool = _get_bool("LLM_REVIEW_ENABLED", False)
+    bedrock_review_region: str = os.getenv("BEDROCK_REVIEW_REGION", "us-east-1")
     bedrock_review_model_id: str = os.getenv(
         "BEDROCK_REVIEW_MODEL_ID",
         "openai.gpt-oss-120b-1:0",

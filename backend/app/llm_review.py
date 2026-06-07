@@ -76,7 +76,10 @@ def build_review_prompt(
 def call_bedrock_review(prompt: str) -> dict[str, Any]:
     import boto3
 
-    client = boto3.client("bedrock-runtime", region_name=settings.aws_region)
+    client = boto3.client(
+        "bedrock-runtime",
+        region_name=settings.bedrock_review_region,
+    )
     response = client.invoke_model(
         modelId=settings.bedrock_review_model_id,
         body=json.dumps(
@@ -137,7 +140,6 @@ def normalize_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
         ),
     }
 
-# 베드락 연동 안되어있을때 나오는 것
 def build_fallback_report(
     attempt: ExamAttempt,
     submissions: list[Submission],
@@ -213,9 +215,9 @@ def _load_attempt_submissions(db: Session, attempt: ExamAttempt) -> list[Submiss
         return _latest_submission_per_problem(submissions)
 
     # SQLite server timestamps can tie or drift slightly in fast tests. If the
-    # strict upper bound yields nothing, still generate a report from this
-    # attempt window instead of returning an empty LLM context.
-    return (
+    # strict upper bound yields nothing, include same-timestamp rows while still
+    # keeping the previous-attempt lower bound and problem-level de-duplication.
+    submissions = (
         db.query(Submission)
         .options(joinedload(Submission.problem), joinedload(Submission.artifact))
         .filter(*base_filters)
@@ -266,7 +268,6 @@ def _latest_submission_per_problem(submissions: list[Submission]) -> list[Submis
         for problem_id in sorted(latest_by_problem)
     ]
 
-# 베드락 연동 안되어있을때 나오는것
 def _fallback_problem_review(submission: Submission) -> dict[str, Any]:
     accepted = submission.status == "ACCEPTED"
     return {

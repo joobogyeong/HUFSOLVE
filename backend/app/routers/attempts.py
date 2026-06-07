@@ -32,6 +32,19 @@ def create_exam_attempt(
         .first()
     )
 
+    submission_window_query = db.query(Submission.id).filter(
+        Submission.exam_id == exam.id,
+        Submission.student_id == request.student_id,
+    )
+    if previous_attempt is not None:
+        submission_window_query = submission_window_query.filter(
+            Submission.created_at > previous_attempt.submitted_at
+        )
+    submission_count = submission_window_query.count()
+
+    if previous_attempt is not None and submission_count == 0:
+        return ExamAttemptRead.from_model(previous_attempt)
+
     total_problems = len(exam.problems)
     accepted_query = db.query(Submission.problem_id).filter(
         Submission.exam_id == exam.id,
@@ -59,24 +72,27 @@ def create_exam_attempt(
     enroll_student_for_exam(db, exam, request.student_id, request.student_name)
     db.flush()
 
-    report = LlmReport(
-        exam_attempt_id=attempt.id,
-        student_id=request.student_id,
-        status="PENDING",
-        model_id=settings.bedrock_review_model_id,
-    )
-    db.add(report)
+    report = None
+    if submission_count > 0:
+        report = LlmReport(
+            exam_attempt_id=attempt.id,
+            student_id=request.student_id,
+            status="PENDING",
+            model_id=settings.bedrock_review_model_id,
+        )
+        db.add(report)
     db.commit()
     db.refresh(attempt)
-    db.refresh(report)
 
-    try:
-        get_queue_client().enqueue_llm_report(report.id)
-    except Exception as exc:
-        report.status = "SYSTEM_ERROR"
-        report.error_message = f"Failed to enqueue LLM report: {exc}"
-        db.commit()
-        db.refresh(attempt)
+    if report is not None:
+        db.refresh(report)
+        try:
+            get_queue_client().enqueue_llm_report(report.id)
+        except Exception as exc:
+            report.status = "SYSTEM_ERROR"
+            report.error_message = f"Failed to enqueue LLM report: {exc}"
+            db.commit()
+            db.refresh(attempt)
 
     return ExamAttemptRead.from_model(attempt)
 

@@ -76,6 +76,18 @@
     "ParameterValue": "http://localhost:5173"
   },
   {
+    "ParameterKey": "LlmReviewEnabled",
+    "ParameterValue": "false"
+  },
+  {
+    "ParameterKey": "BedrockReviewRegion",
+    "ParameterValue": "us-east-1"
+  },
+  {
+    "ParameterKey": "BedrockReviewModelId",
+    "ParameterValue": "openai.gpt-oss-120b-1:0"
+  },
+  {
     "ParameterKey": "DbName",
     "ParameterValue": "hufsolve"
   },

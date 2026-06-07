@@ -528,6 +528,7 @@ class HufsolveIntegrationTest(unittest.TestCase):
                 },
             )
             self.assertEqual(created.status_code, 201)
+            created_payload = created.json()
             self.assertEqual(created.json()["passedProblems"], 1)
             self.assertEqual(created.json()["totalProblems"], 3)
             self.assertEqual(created.json()["score"], 33)
@@ -549,7 +550,9 @@ class HufsolveIntegrationTest(unittest.TestCase):
                 },
             )
             self.assertEqual(repeated.status_code, 201)
-            self.assertEqual(repeated.json()["passedProblems"], 0)
+            self.assertEqual(repeated.json()["attemptId"], created_payload["attemptId"])
+            self.assertEqual(repeated.json()["reportId"], created_payload["reportId"])
+            self.assertEqual(repeated.json()["passedProblems"], 1)
 
         db = SessionLocal()
         try:
@@ -560,6 +563,22 @@ class HufsolveIntegrationTest(unittest.TestCase):
             self.assertEqual(db.query(CourseEnrollment).count(), 1)
         finally:
             db.close()
+
+    def test_exam_attempt_without_submissions_does_not_enqueue_llm_report(self) -> None:
+        with TestClient(app) as client:
+            created = client.post(
+                "/exam-attempts",
+                json={
+                    "roomCode": "HUF-2026",
+                    "studentId": "20260000",
+                    "studentName": "미제출 학생",
+                    "status": "최종 제출",
+                },
+            )
+            self.assertEqual(created.status_code, 201)
+            self.assertIsNone(created.json()["reportId"])
+
+        self.assertIsNone(LocalWorkerQueue().receive())
 
     def test_exam_attempt_creates_pending_llm_report(self) -> None:
         self._create_pending_submission(student_id="20260002", status="ACCEPTED")

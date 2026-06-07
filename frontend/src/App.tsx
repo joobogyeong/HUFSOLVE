@@ -1387,7 +1387,7 @@ function MyPage({
                   <button
                     type="button"
                     onClick={() => onOpenReport(item)}
-                    disabled={!item.reportId || isReportGenerating(item.reportStatus)}
+                    disabled={!item.reportId}
                     className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-zinc-950 bg-white px-4 text-sm font-black text-zinc-950 transition hover:bg-zinc-950 hover:text-white disabled:cursor-not-allowed disabled:border-zinc-200 disabled:text-zinc-400 disabled:hover:bg-white"
                   >
                     <FileText className="h-4 w-4" />
