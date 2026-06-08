@@ -169,7 +169,7 @@ async function request<T>(
 }
 
 export async function fetchExams(): Promise<MockExam[]> {
-  return request<MockExam[]>("/exams");
+  return request<MockExam[]>("/exams", undefined, { wakeBackend: true });
 }
 
 export async function createSubmission(
