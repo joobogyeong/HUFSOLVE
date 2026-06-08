@@ -1,8 +1,17 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertCircle, BookOpen, ClipboardList, Clock3, Send } from "lucide-react";
+import {
+  AlertCircle,
+  BookOpen,
+  Check,
+  ClipboardCopy,
+  Clock3,
+  GraduationCap,
+  ListChecks,
+  Send,
+} from "lucide-react";
 import { useApp } from "../AppContext";
-import { formatDateTime } from "../format";
+import { formatDuration } from "../format";
 
 export function HomePage() {
   const {
@@ -19,6 +28,7 @@ export function HomePage() {
   const navigate = useNavigate();
   const [roomCode, setRoomCode] = useState("");
   const [localNotice, setLocalNotice] = useState("");
+  const [copiedCode, setCopiedCode] = useState("");
   const ready = attemptsReady && examsReady;
 
   const enter = (code = roomCode) => {
@@ -27,6 +37,17 @@ export function HomePage() {
       navigate(`/exam/${draft.roomCode}`);
     } catch (error) {
       setLocalNotice(error instanceof Error ? error.message : "시험에 입장할 수 없습니다.");
+    }
+  };
+
+  const copyCode = async (code: string) => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopiedCode(code);
+      setLocalNotice(`${code} 코드를 복사했습니다. 상단 입력창에 붙여넣어 입장하세요.`);
+    } catch {
+      setRoomCode(code);
+      setLocalNotice(`${code} 코드를 입력창에 채웠습니다.`);
     }
   };
 
@@ -61,12 +82,23 @@ export function HomePage() {
             const attempted = attempts.some((attempt) => attempt.roomCode === exam.roomCode);
             return (
               <article key={exam.roomCode} className="glass-panel rounded-3xl p-5">
-                <div className="mb-3 flex items-center gap-2 text-sm font-bold text-zinc-500"><BookOpen className="h-4 w-4" />{exam.course}</div>
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 text-sm font-bold text-zinc-500"><BookOpen className="h-4 w-4" />{exam.course}</div>
+                  <span className="rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs font-black">{exam.examType}</span>
+                </div>
                 <h3 className="text-xl font-black">{exam.title}</h3>
-                <p className="mt-3 text-sm font-semibold text-zinc-600">{formatDateTime(exam.startsAt)} · {exam.problems.length}문제</p>
-              <button type="button" aria-label={`${exam.roomCode} ${attempted ? "응시 완료" : "입장"}`} disabled={!ready || attempted} onClick={() => enter(exam.roomCode)} className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-zinc-950 px-4 py-3 font-black text-white disabled:bg-zinc-300">
-                  <ClipboardList className="h-4 w-4" />{attempted ? "응시 완료" : `${exam.roomCode} 입장`}
-                </button>
+                <div className="mt-5 grid grid-cols-2 gap-2 text-sm font-bold text-zinc-600">
+                  <div className="flex items-center gap-2 rounded-2xl bg-white/70 p-3"><GraduationCap className="h-4 w-4" />{exam.professor} 교수님</div>
+                  <div className="flex items-center gap-2 rounded-2xl bg-white/70 p-3"><ListChecks className="h-4 w-4" />{exam.problems.length}문제</div>
+                  <div className="col-span-2 flex items-center gap-2 rounded-2xl bg-white/70 p-3"><Clock3 className="h-4 w-4" />총 {formatDuration(exam.durationSeconds)}</div>
+                </div>
+                <div className="mt-5 rounded-2xl border border-zinc-200 bg-white p-3">
+                  <div className="mb-2 flex items-center justify-between text-xs font-black text-zinc-500"><span>시험 코드</span>{attempted && <span>응시 완료</span>}</div>
+                  <button type="button" aria-label={`${exam.roomCode} 코드 복사`} onClick={() => void copyCode(exam.roomCode)} className="inline-flex w-full items-center justify-between rounded-xl bg-zinc-950 px-4 py-3 font-black tracking-[0.18em] text-white">
+                    {exam.roomCode}
+                    {copiedCode === exam.roomCode ? <Check className="h-4 w-4" /> : <ClipboardCopy className="h-4 w-4" />}
+                  </button>
+                </div>
               </article>
             );
           })}

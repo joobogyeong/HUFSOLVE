@@ -1,0 +1,871 @@
+자료구조 문제
+
+---
+
+# **자료구조 문제 1**
+
+## **문제명: 최근 주문 조회**
+
+## **난이도**
+
+하
+
+## **핵심 자료구조**
+
+스택 / 배열
+
+## **문제 설명**
+
+온라인 쇼핑몰에서 주문 기록을 관리하려고 한다.
+
+다음 두 종류의 명령이 주어진다.
+
+- `order X`: 상품 번호 `X`를 주문 기록에 추가한다.
+- `recent`: 가장 최근에 주문한 상품 번호를 출력한다.
+
+단, `recent` 명령이 주어질 때 주문 기록은 항상 하나 이상 존재한다.
+
+## **입력**
+
+첫째 줄에 명령의 개수 `N`이 주어진다.
+
+다음 `N`개의 줄에 명령이 하나씩 주어진다.
+
+## **출력**
+
+`recent` 명령이 주어질 때마다 가장 최근에 주문한 상품 번호를 출력한다.
+
+## **제한**
+
+- `1 ≤ N ≤ 100,000`
+- `1 ≤ X ≤ 1,000,000`
+
+## **예시 입력**
+
+```
+6
+order 10
+order 20
+recent
+order 30
+recent
+recent
+```
+
+## **예시 출력**
+
+```
+20
+30
+30
+```
+
+## **정답 코드**
+
+```python
+import sys
+
+input = sys.stdin.readline
+
+n = int(input())
+orders = []
+
+for _ in range(n):
+    command = input().split()
+
+    if command[0] == "order":
+        x = int(command[1])
+        orders.append(x)
+
+    elif command[0] == "recent":
+        print(orders[-1])
+```
+
+---
+
+# **자료구조 문제 2**
+
+## **문제명: 줄 서기 명단 관리**
+
+## **난이도**
+
+하
+
+## **핵심 자료구조**
+
+큐
+
+## **문제 설명**
+
+사람들이 줄을 서 있다.
+
+다음 명령을 처리하는 프로그램을 작성하시오.
+
+- `push X`: 이름 `X`를 줄의 맨 뒤에 추가한다.
+- `pop`: 줄의 맨 앞 사람을 출력하고 줄에서 제거한다.
+- `size`: 현재 줄에 서 있는 사람 수를 출력한다.
+
+단, `pop` 명령이 주어질 때 줄은 비어 있지 않다.
+
+## **입력**
+
+첫째 줄에 명령의 개수 `N`이 주어진다.
+다음 `N`개의 줄에 명령이 주어진다.
+
+## **출력**
+
+`pop`, `size` 명령이 주어질 때마다 결과를 출력한다.
+
+## **제한**
+
+- `1 ≤ N ≤ 100,000`
+- 이름은 공백 없는 문자열이다.
+
+## **예시 입력**
+
+```
+6
+push Mina
+push Jisoo
+size
+pop
+pop
+size
+```
+
+## **예시 출력**
+
+```
+2
+Mina
+Jisoo
+0
+```
+
+## **정답 코드**
+
+```python
+import sys
+from collections import deque
+
+input = sys.stdin.readline
+
+n = int(input())
+queue = deque()
+
+for _ in range(n):
+    command = input().split()
+
+    if command[0] == "push":
+        queue.append(command[1])
+
+    elif command[0] == "pop":
+        print(queue.popleft())
+
+    elif command[0] == "size":
+        print(len(queue))
+```
+
+---
+
+# **자료구조 문제 3**
+
+## **문제명: 단어 등장 횟수 세기**
+
+## **난이도**
+
+하
+
+## **핵심 자료구조**
+
+딕셔너리 / 해시맵
+
+## **문제 설명**
+
+문장에 포함된 단어들이 주어진다.
+
+각 단어가 몇 번 등장했는지 구한 뒤, 특정 단어들의 등장 횟수를 출력하시오.
+
+## **입력**
+
+첫째 줄에 단어의 개수 `N`이 주어진다.
+
+둘째 줄에 `N`개의 단어가 공백으로 구분되어 주어진다.
+
+셋째 줄에 질문 개수 `Q`가 주어진다.
+
+넷째 줄에 확인할 단어 `Q`개가 주어진다.
+
+## **출력**
+
+각 질문 단어의 등장 횟수를 공백으로 구분하여 출력한다.
+
+등장하지 않은 단어는 `0`을 출력한다.
+
+## **제한**
+
+- `1 ≤ N ≤ 100,000`
+- `1 ≤ Q ≤ 100,000`
+- 단어는 알파벳 소문자로만 이루어진다.
+
+## **예시 입력**
+
+```
+7
+apple banana apple orange banana apple kiwi
+4
+apple banana melon kiwi
+```
+
+## **예시 출력**
+
+```
+3 2 0 1
+```
+
+## **정답 코드**
+
+```python
+import sys
+
+input = sys.stdin.readline
+
+n = int(input())
+words = input().split()
+
+count = {}
+
+for word in words:
+    if word not in count:
+        count[word] = 0
+    count[word] += 1
+
+q = int(input())
+queries = input().split()
+
+answer = []
+
+for word in queries:
+    answer.append(count.get(word, 0))
+
+print(*answer)
+```
+
+---
+
+# **자료구조 문제 4**
+
+## **문제명: 괄호 문자열 검사**
+
+## **난이도**
+
+하
+
+## **핵심 자료구조**
+
+스택
+
+## **문제 설명**
+
+문자열 `S`가 주어진다.
+문자열은 소괄호 `(`, `)` 로만 이루어져 있다.
+
+이 문자열이 올바른 괄호 문자열인지 판별하시오.
+
+올바른 괄호 문자열이란 다음 조건을 만족하는 문자열이다.
+
+- 여는 괄호 `(`는 반드시 닫는 괄호 `)`와 짝을 이루어야 한다.
+- 닫는 괄호 `)`가 여는 괄호보다 먼저 나와서는 안 된다.
+
+## **입력**
+
+첫째 줄에 문자열 `S`가 주어진다.
+
+## **출력**
+
+올바른 괄호 문자열이면 `YES`, 아니면 `NO`를 출력한다.
+
+## **제한**
+
+- `1 ≤ |S| ≤ 100,000`
+- `S`는 `(`, `)`로만 이루어져 있다.
+
+## **예시 입력**
+
+```
+(()())
+```
+
+## **예시 출력**
+
+```
+YES
+```
+
+## **정답 코드**
+
+```python
+import sys
+
+s = sys.stdin.readline().strip()
+
+stack = []
+
+for ch in s:
+    if ch == '(':
+        stack.append(ch)
+    else:
+        if not stack:
+            print("NO")
+            sys.exit()
+        stack.pop()
+
+if stack:
+    print("NO")
+else:
+    print("YES")
+```
+
+---
+
+# **자료구조 문제 5**
+
+## **문제명: 중복 없는 대기 명단**
+
+## **난이도**
+
+중하
+
+## **핵심 자료구조**
+
+집합 / 리스트
+
+## **문제 설명**
+
+행사 대기 명단을 관리하려고 한다.
+
+사람들이 신청한 순서대로 이름이 주어진다.
+
+이미 대기 명단에 있는 사람이 다시 신청하면 무시한다.
+
+최종 대기 명단을 신청 순서대로 출력하시오.
+
+## **입력**
+
+첫째 줄에 신청 횟수 `N`이 주어진다.
+
+다음 `N`개의 줄에 신청자 이름이 주어진다.
+
+## **출력**
+
+중복을 제거한 최종 대기 명단을 한 줄에 하나씩 출력한다.
+
+## **제한**
+
+- `1 ≤ N ≤ 100,000`
+- 이름은 공백 없는 문자열이다.
+
+## **예시 입력**
+
+```
+6
+Mina
+Jisoo
+Mina
+Hana
+Jisoo
+Yuna
+```
+
+## **예시 출력**
+
+```
+Mina
+Jisoo
+Hana
+Yuna
+```
+
+## **정답 코드**
+
+```python
+import sys
+
+input = sys.stdin.readline
+
+n = int(input())
+
+seen = set()
+waiting_list = []
+
+for _ in range(n):
+    name = input().strip()
+
+    if name not in seen:
+        seen.add(name)
+        waiting_list.append(name)
+
+for name in waiting_list:
+    print(name)
+```
+
+---
+
+# **자료구조 문제 6**
+
+## **문제명: 뒤로 가기**
+
+## **난이도**
+
+중
+
+## **핵심 자료구조**
+
+스택
+
+## **문제 설명**
+
+웹 브라우저의 방문 기록을 관리하려고 한다.
+
+다음 명령을 처리하시오.
+
+- `visit X`: 새로운 페이지 `X`에 방문한다.
+- `back`: 이전 페이지로 이동한다.
+- `current`: 현재 페이지를 출력한다.
+
+처음 시작 페이지는 `home`이다.
+
+`back` 명령이 주어질 때 이전 페이지가 없다면 현재 페이지는 그대로 유지된다.
+
+## **입력**
+
+첫째 줄에 명령의 개수 `N`이 주어진다.
+다음 `N`개의 줄에 명령이 주어진다.
+
+## **출력**
+
+`current` 명령이 주어질 때마다 현재 페이지를 출력한다.
+
+## **제한**
+
+- `1 ≤ N ≤ 100,000`
+- 페이지 이름은 공백 없는 문자열이다.
+
+## **예시 입력**
+
+```
+7
+current
+visit google
+visit youtube
+current
+back
+current
+back
+```
+
+## **예시 출력**
+
+```
+home
+youtube
+google
+```
+
+## **정답 코드**
+
+```python
+import sys
+
+input = sys.stdin.readline
+
+n = int(input())
+
+back_stack = []
+current_page = "home"
+
+for _ in range(n):
+    command = input().split()
+
+    if command[0] == "visit":
+        back_stack.append(current_page)
+        current_page = command[1]
+
+    elif command[0] == "back":
+        if back_stack:
+            current_page = back_stack.pop()
+
+    elif command[0] == "current":
+        print(current_page)
+```
+
+---
+
+# **자료구조 문제 7**
+
+## **문제명: 프린터 대기열**
+
+## **난이도**
+
+중
+
+## **핵심 자료구조**
+
+큐
+
+## **문제 설명**
+
+프린터에는 문서들이 순서대로 대기하고 있다.
+
+각 문서에는 중요도가 있다.
+
+프린터는 다음 규칙에 따라 문서를 출력한다.
+
+1. 대기열의 맨 앞 문서를 확인한다.
+2. 현재 대기열에 이 문서보다 중요도가 높은 문서가 있다면, 이 문서를 대기열의 맨 뒤로 보낸다.
+3. 그렇지 않다면 이 문서를 출력한다.
+
+처음에 대기열에 있는 문서들의 중요도가 주어졌을 때, 특정 위치에 있던 문서가 몇 번째로 출력되는지 구하시오.
+
+## **입력**
+
+첫째 줄에 문서의 개수 `N`과 알고 싶은 문서의 위치 `M`이 주어진다.
+
+둘째 줄에 `N`개 문서의 중요도가 주어진다.
+
+문서의 위치는 `0`번부터 시작한다.
+
+## **출력**
+
+처음에 `M`번 위치에 있던 문서가 몇 번째로 출력되는지 출력한다.
+
+## **제한**
+
+- `1 ≤ N ≤ 100`
+- `0 ≤ M < N`
+- `1 ≤ 중요도 ≤ 9`
+
+## **예시 입력**
+
+```
+6 0
+1 1 9 1 1 1
+```
+
+## **예시 출력**
+
+```
+5
+```
+
+## **정답 코드**
+
+```python
+import sys
+from collections import deque
+
+input = sys.stdin.readline
+
+n, m = map(int, input().split())
+priorities = list(map(int, input().split()))
+
+queue = deque()
+
+for i in range(n):
+    queue.append((i, priorities[i]))
+
+count = 0
+
+while queue:
+    current = queue.popleft()
+
+    has_higher_priority = False
+
+    for document in queue:
+        if document[1] > current[1]:
+            has_higher_priority = True
+            break
+
+    if has_higher_priority:
+        queue.append(current)
+    else:
+        count += 1
+
+        if current[0] == m:
+            print(count)
+            break
+```
+
+---
+
+# **자료구조 문제 8**
+
+## **문제명: 가장 가까운 큰 수**
+
+## **난이도**
+
+중상
+
+## **핵심 자료구조**
+
+단조 스택
+
+## **문제 설명**
+
+길이 `N`의 수열 `A`가 주어진다.
+각 원소 `A[i]`에 대해, 오른쪽에 있으면서 `A[i]`보다 큰 수 중 가장 왼쪽에 있는 수를 구하시오.
+
+그런 수가 없다면 `-1`을 출력한다.
+
+## **입력**
+
+첫째 줄에 수열의 길이 `N`이 주어진다.
+둘째 줄에 `N`개의 정수 `A[i]`가 주어진다.
+
+## **출력**
+
+각 위치에 대한 답을 공백으로 구분하여 출력한다.
+
+## **제한**
+
+- `1 ≤ N ≤ 1,000,000`
+- `1 ≤ A[i] ≤ 1,000,000`
+
+## **예시 입력**
+
+```
+4
+3 5 2 7
+```
+
+## **예시 출력**
+
+```
+5 7 7 -1
+```
+
+## **정답 코드**
+
+```python
+import sys
+
+input = sys.stdin.readline
+
+n = int(input())
+arr = list(map(int, input().split()))
+
+answer = [-1] * n
+stack = []
+
+for i in range(n):
+    while stack and arr[stack[-1]] < arr[i]:
+        idx = stack.pop()
+        answer[idx] = arr[i]
+
+    stack.append(i)
+
+print(*answer)
+```
+
+---
+
+# **자료구조 문제 9**
+
+## **문제명: 우선순위 상담 시스템**
+
+## **난이도**
+
+상
+
+## **핵심 자료구조**
+
+힙 / 우선순위 큐
+
+## **문제 설명**
+
+상담 센터에서 고객 상담 요청을 처리한다.
+
+각 고객은 이름과 우선순위를 가진다.
+
+우선순위 숫자가 작을수록 더 먼저 상담을 받아야 한다.
+
+다음 명령을 처리하시오.
+
+- `request 이름 우선순위`: 상담 요청을 추가한다.
+- `process`: 우선순위가 가장 높은 고객의 이름을 출력하고 제거한다.
+
+우선순위가 같은 경우에는 먼저 요청한 고객이 먼저 처리된다.
+
+`process` 명령이 주어질 때 상담 대기열은 비어 있지 않다.
+
+## **입력**
+
+첫째 줄에 명령의 개수 `N`이 주어진다.
+
+다음 `N`개의 줄에 명령이 주어진다.
+
+## **출력**
+
+`process` 명령이 주어질 때마다 처리되는 고객의 이름을 출력한다.
+
+## **제한**
+
+- `1 ≤ N ≤ 100,000`
+- `1 ≤ 우선순위 ≤ 1,000,000`
+
+## **예시 입력**
+
+```
+6
+request Alice 3
+request Bob 1
+request Chris 1
+process
+process
+process
+```
+
+## **예시 출력**
+
+```
+Bob
+Chris
+Alice
+```
+
+## **정답 코드**
+
+```python
+import sys
+import heapq
+
+input = sys.stdin.readline
+
+n = int(input())
+
+heap = []
+order = 0
+
+for _ in range(n):
+    command = input().split()
+
+    if command[0] == "request":
+        name = command[1]
+        priority = int(command[2])
+
+        heapq.heappush(heap, (priority, order, name))
+        order += 1
+
+    elif command[0] == "process":
+        priority, order_number, name = heapq.heappop(heap)
+        print(name)
+```
+
+---
+
+# **자료구조 문제 10**
+
+## **문제명: 실시간 중앙값 관리**
+
+## **난이도**
+
+상
+
+## **핵심 자료구조**
+
+최대 힙 / 최소 힙
+
+## **문제 설명**
+
+정수가 하나씩 입력된다.
+
+각 정수가 입력될 때마다, 지금까지 입력된 수들의 중앙값을 출력하시오.
+
+입력된 수의 개수가 짝수라면, 가운데 두 수 중 작은 값을 중앙값으로 정의한다.
+
+## **입력**
+
+첫째 줄에 정수의 개수 `N`이 주어진다.
+다음 `N`개의 줄에 정수 `X`가 하나씩 주어진다.
+
+## **출력**
+
+각 정수가 입력될 때마다 현재까지의 중앙값을 한 줄에 하나씩 출력한다.
+
+## **제한**
+
+- `1 ≤ N ≤ 100,000`
+- `10,000 ≤ X ≤ 10,000`
+
+## **예시 입력**
+
+```
+7
+1
+5
+2
+10
+-99
+7
+5
+```
+
+## **예시 출력**
+
+```
+1
+1
+2
+2
+2
+2
+5
+```
+
+## **정답 코드**
+
+```python
+import sys
+import heapq
+
+input = sys.stdin.readline
+
+n = int(input())
+
+left_heap = []
+right_heap = []
+
+for _ in range(n):
+    x = int(input())
+
+    if len(left_heap) == len(right_heap):
+        heapq.heappush(left_heap, -x)
+    else:
+        heapq.heappush(right_heap, x)
+
+    if right_heap and -left_heap[0] > right_heap[0]:
+        left_value = -heapq.heappop(left_heap)
+        right_value = heapq.heappop(right_heap)
+
+        heapq.heappush(left_heap, -right_value)
+        heapq.heappush(right_heap, left_value)
+
+    print(-left_heap[0])
+```
+
+---
+
+# **전체 문제 요약**
+
+| **번호** | **난이도** | **문제명** | **핵심 자료구조** |
+| --- | --- | --- | --- |
+| 1 | 하 | 최근 주문 조회 | 스택 / 배열 |
+| 2 | 하 | 줄 서기 명단 관리 | 큐 |
+| 3 | 하 | 단어 등장 횟수 세기 | 딕셔너리 / 해시맵 |
+| 4 | 하 | 괄호 문자열 검사 | 스택 |
+| 5 | 중하 | 중복 없는 대기 명단 | 집합 / 리스트 |
+| 6 | 중 | 뒤로 가기 | 스택 |
+| 7 | 중 | 프린터 대기열 | 큐 |
+| 8 | 중상 | 가장 가까운 큰 수 | 단조 스택 |
+| 9 | 상 | 우선순위 상담 시스템 | 힙 / 우선순위 큐 |
+| 10 | 상 | 실시간 중앙값 관리 | 최대 힙 / 최소 힙 |

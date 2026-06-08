@@ -93,6 +93,17 @@ describe("routing and exam flow", () => {
     expect(sessionStorage.getItem(PROFILE_STORAGE_KEY)).toBeNull();
   });
 
+  it("shows exam metadata and copies codes without direct entry", async () => {
+    sessionStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
+    renderAt("/");
+    expect((await screen.findAllByText("신찬수 교수님"))).toHaveLength(3);
+    expect(screen.getAllByText("10문제")).toHaveLength(3);
+    expect(screen.getAllByText("총 2시간")).toHaveLength(3);
+    await userEvent.click(screen.getByRole("button", { name: "CT-MID 코드 복사" }));
+    expect(await screen.findByText(/CT-MID 코드를/)).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/");
+  });
+
   it("supports direct my-page access and grading polling", async () => {
     sessionStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
     vi.mocked(api.fetchExamAttempts).mockResolvedValue([gradingAttempt]);
@@ -143,7 +154,8 @@ describe("routing and exam flow", () => {
     sessionStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
     localStorage.setItem(EXAM_DRAFT_STORAGE_KEY, JSON.stringify(makeDraft()));
     renderAt("/");
-    await userEvent.click(await screen.findByRole("button", { name: /DS-FIN 입장/ }));
+    await userEvent.type(await screen.findByPlaceholderText("EXAM CODE"), "DS-MID");
+    await userEvent.click(screen.getByRole("button", { name: "입장" }));
     expect(await screen.findByText("이 브라우저에서는 한 번에 하나의 시험만 진행할 수 있습니다.")).toBeInTheDocument();
   });
 
@@ -153,8 +165,9 @@ describe("routing and exam flow", () => {
       { ...gradingAttempt, status: "COMPLETED", score: 100 },
     ]);
     renderAt("/");
-    const button = await screen.findByRole("button", { name: "HUF-2026 응시 완료" });
-    await waitFor(() => expect(button).toBeDisabled());
+    await userEvent.type(await screen.findByPlaceholderText("EXAM CODE"), mockExams[0].roomCode);
+    await userEvent.click(screen.getByRole("button", { name: "입장" }));
+    expect(await screen.findByText("이미 최종 제출한 시험에는 다시 입장할 수 없습니다.")).toBeInTheDocument();
   });
 
   it("auto-submits an expired draft after session restoration", async () => {

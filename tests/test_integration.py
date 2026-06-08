@@ -32,6 +32,7 @@ from backend.app.models import (
     Course,
     CourseEnrollment,
     CourseProfessor,
+    Exam,
     ExamAttempt,
     ExamCourse,
     LlmReport,
@@ -41,6 +42,7 @@ from backend.app.models import (
     SampleRun,
     Student,
     Submission,
+    Testcase,
     User,
 )
 from backend.app.queue.sqs import SqsQueueClient
@@ -75,7 +77,10 @@ class HufsolveIntegrationTest(unittest.TestCase):
             exams_response = client.get("/exams")
             self.assertEqual(exams_response.status_code, 200)
             exams = exams_response.json()
-            self.assertEqual(exams[0]["roomCode"], "HUF-2026")
+            self.assertEqual(
+                [exam["roomCode"] for exam in exams],
+                ["CT-MID", "DS-MID", "ALG-MID"],
+            )
 
             problem_id = exams[0]["problems"][0]["id"]
             submission_response = client.post(
@@ -96,13 +101,26 @@ class HufsolveIntegrationTest(unittest.TestCase):
     def test_seed_creates_normalized_reference_tables_and_problem_artifacts(self) -> None:
         db = SessionLocal()
         try:
-            self.assertEqual(db.query(User).filter(User.role == "PROFESSOR").count(), 2)
-            self.assertEqual(db.query(Professor).count(), 2)
+            self.assertEqual(db.query(User).filter(User.role == "PROFESSOR").count(), 1)
+            self.assertEqual(db.query(Professor).count(), 1)
             self.assertEqual(db.query(Student).count(), 0)
-            self.assertEqual(db.query(Course).count(), 2)
-            self.assertEqual(db.query(CourseProfessor).count(), 2)
-            self.assertEqual(db.query(ExamCourse).count(), 2)
+            self.assertEqual(db.query(Course).count(), 3)
+            self.assertEqual(db.query(CourseProfessor).count(), 3)
+            self.assertEqual(db.query(Exam).count(), 3)
+            self.assertEqual(db.query(ExamCourse).count(), 3)
+            self.assertEqual(db.query(Problem).count(), 30)
+            self.assertEqual(db.query(Testcase).filter(Testcase.is_hidden == 0).count(), 30)
+            self.assertEqual(db.query(Testcase).filter(Testcase.is_hidden == 1).count(), 90)
             self.assertEqual(db.query(ProblemArtifact).count(), db.query(Problem).count())
+            for problem in db.query(Problem).all():
+                self.assertEqual(
+                    sum(testcase.is_hidden == 0 for testcase in problem.testcases),
+                    1,
+                )
+                self.assertEqual(
+                    sum(testcase.is_hidden == 1 for testcase in problem.testcases),
+                    3,
+                )
 
             artifact = db.query(ProblemArtifact).order_by(ProblemArtifact.problem_id).first()
             statement = get_json(artifact.statement_s3_key)
@@ -143,21 +161,7 @@ class HufsolveIntegrationTest(unittest.TestCase):
         finally:
             db.close()
 
-        def fake_run_python_code(
-            source_code: str,
-            input_data: str,
-            time_limit_ms: int | None = None,
-            memory_limit_mb: int | None = None,
-        ) -> dict[str, object]:
-            a, b = [int(part) for part in input_data.split()]
-            return {
-                "status": "OK",
-                "stdout": str(a + b),
-                "stderr": "",
-                "execution_time_ms": 7,
-            }
-
-        with patch("worker.judge.run_python_code", side_effect=fake_run_python_code):
+        with patch("worker.judge.run_python_code", side_effect=self._run_seed_case_successfully):
             judge_submission(submission_id)
 
         db = SessionLocal()
@@ -216,21 +220,7 @@ class HufsolveIntegrationTest(unittest.TestCase):
         message = LocalWorkerQueue().receive()
         self.assertEqual(message.resource_id, submission_id)
 
-        def fake_run_python_code(
-            source_code: str,
-            input_data: str,
-            time_limit_ms: int | None = None,
-            memory_limit_mb: int | None = None,
-        ) -> dict[str, object]:
-            a, b = [int(part) for part in input_data.split()]
-            return {
-                "status": "OK",
-                "stdout": str(a + b),
-                "stderr": "",
-                "execution_time_ms": 12,
-            }
-
-        with patch("worker.judge.run_python_code", side_effect=fake_run_python_code):
+        with patch("worker.judge.run_python_code", side_effect=self._run_seed_case_successfully):
             judge_submission(submission_id)
 
         submission = self._get_submission(submission_id)
@@ -380,6 +370,12 @@ class HufsolveIntegrationTest(unittest.TestCase):
             self.assertEqual(run_response.status_code, 202)
             run_id = run_response.json()["runId"]
 
+        db = SessionLocal()
+        try:
+            expected_output = db.get(Problem, problem_id).samples[0]["output"]
+        finally:
+            db.close()
+
         message = LocalWorkerQueue().receive()
         self.assertEqual(message.task_type, "sample_run")
         self.assertEqual(message.resource_id, run_id)
@@ -400,7 +396,7 @@ class HufsolveIntegrationTest(unittest.TestCase):
             payload = client.get(f"/runs/{run_id}").json()
             self.assertEqual(payload["status"], "COMPLETED")
             self.assertEqual(payload["input"], custom_input)
-            self.assertEqual(payload["expectedOutput"], "3")
+            self.assertEqual(payload["expectedOutput"], expected_output)
             self.assertEqual(payload["stdout"], "30\n")
 
     def test_api_preserves_empty_custom_run_input(self) -> None:
@@ -532,7 +528,8 @@ class HufsolveIntegrationTest(unittest.TestCase):
             self.assertEqual(created.status_code, 202)
             payload = created.json()
             self.assertEqual(payload["status"], "GRADING")
-            self.assertEqual(payload["totalProblems"], 3)
+            problem_count = len(client.get("/exams").json()[0]["problems"])
+            self.assertEqual(payload["totalProblems"], problem_count)
 
             repeated = self._create_exam_attempt(client, "20260001")
             self.assertEqual(repeated.status_code, 202)
@@ -551,7 +548,7 @@ class HufsolveIntegrationTest(unittest.TestCase):
                 .order_by(Submission.problem_id)
                 .all()
             )
-            self.assertEqual(len(submissions), 3)
+            self.assertEqual(len(submissions), problem_count)
             self.assertEqual(db.query(ExamAttempt).count(), 1)
             self.assertEqual(
                 db.query(Student).filter(Student.student_number == "20260001").count(),
@@ -579,10 +576,10 @@ class HufsolveIntegrationTest(unittest.TestCase):
                 .all()
             )
             self.assertEqual(attempt.status, "GRADING")
-            self.assertEqual(
-                [submission.status for submission in submissions],
-                ["PENDING", "SYSTEM_ERROR", "PENDING"],
-            )
+            statuses = [submission.status for submission in submissions]
+            self.assertEqual(statuses[1], "SYSTEM_ERROR")
+            self.assertEqual(statuses.count("SYSTEM_ERROR"), 1)
+            self.assertEqual(statuses.count("PENDING"), len(statuses) - 1)
         finally:
             db.close()
 
@@ -614,8 +611,11 @@ class HufsolveIntegrationTest(unittest.TestCase):
         try:
             attempt = db.get(ExamAttempt, attempt_id)
             self.assertEqual(attempt.status, "SYSTEM_ERROR")
-            self.assertEqual(attempt.passed_problems, 2)
-            self.assertEqual(attempt.score, 67)
+            self.assertEqual(attempt.passed_problems, len(submissions) - 1)
+            self.assertEqual(
+                attempt.score,
+                round(((len(submissions) - 1) / len(submissions)) * 100),
+            )
             self.assertEqual(
                 db.query(LlmReport).filter(LlmReport.exam_attempt_id == attempt_id).count(),
                 1,
@@ -650,7 +650,7 @@ class HufsolveIntegrationTest(unittest.TestCase):
             self.assertEqual(report.status, "COMPLETED")
             self.assertEqual(report.language, "ko")
             self.assertIn("리포트", report.summary)
-            self.assertEqual(len(report.problem_reviews), 3)
+            self.assertEqual(len(report.problem_reviews), len(submissions))
         finally:
             db.close()
 
@@ -662,7 +662,7 @@ class HufsolveIntegrationTest(unittest.TestCase):
         try:
             attempt = db.get(ExamAttempt, attempt_id)
             submissions = _load_attempt_submissions(db, attempt)
-            self.assertEqual(len(submissions), 3)
+            self.assertEqual(len(submissions), attempt.total_problems)
             prompt = build_review_prompt(attempt, submissions)
             item = json.loads(prompt)["submissions"][0]
             self.assertIn("problem", item)
@@ -760,6 +760,33 @@ class HufsolveIntegrationTest(unittest.TestCase):
             submission = db.get(Submission, submission_id)
             db.expunge(submission)
             return submission
+        finally:
+            db.close()
+
+    def _run_seed_case_successfully(
+        self,
+        source_code: str,
+        input_data: str,
+        time_limit_ms: int | None = None,
+        memory_limit_mb: int | None = None,
+    ) -> dict[str, object]:
+        db = SessionLocal()
+        try:
+            problem = db.query(Problem).order_by(Problem.id.asc()).first()
+            testcase = (
+                db.query(Testcase)
+                .filter(
+                    Testcase.problem_id == problem.id,
+                    Testcase.input_data == input_data,
+                )
+                .one()
+            )
+            return {
+                "status": "OK",
+                "stdout": testcase.expected_output,
+                "stderr": "",
+                "execution_time_ms": 7,
+            }
         finally:
             db.close()
 

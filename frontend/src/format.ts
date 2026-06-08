@@ -18,3 +18,12 @@ export function formatDateTime(value: string | number) {
     minute: "2-digit",
   }).format(new Date(value));
 }
+
+export function formatDuration(seconds: number) {
+  const totalMinutes = Math.floor(seconds / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return [hours > 0 ? `${hours}시간` : "", minutes > 0 ? `${minutes}분` : ""]
+    .filter(Boolean)
+    .join(" ");
+}
