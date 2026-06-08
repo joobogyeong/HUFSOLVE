@@ -76,6 +76,10 @@
     "ParameterValue": "http://localhost:5173"
   },
   {
+    "ParameterKey": "SmtpSecretArn",
+    "ParameterValue": "arn:aws:secretsmanager:ap-northeast-2:123456789012:secret:hufsolve/prod/smtp-example"
+  },
+  {
     "ParameterKey": "LlmReviewEnabled",
     "ParameterValue": "false"
   },

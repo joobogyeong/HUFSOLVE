@@ -7,6 +7,7 @@ set -euo pipefail
 : "${DATABASE_SECRET_ARN:=}"
 : "${DATABASE_HOST:=}"
 : "${DATABASE_NAME:=hufsolve}"
+: "${SMTP_SECRET_ARN:=}"
 : "${SQS_QUEUE_URL:?SQS_QUEUE_URL is required}"
 : "${S3_BUCKET_NAME:?S3_BUCKET_NAME is required}"
 : "${FRONTEND_ORIGIN:=http://localhost:5173}"
@@ -49,6 +50,30 @@ PY
   )
 fi
 
+if [[ -n "${SMTP_SECRET_ARN}" ]]; then
+  export AWS_REGION SMTP_SECRET_ARN
+  python3.11 - <<'PY'
+import json
+import os
+from pathlib import Path
+
+import boto3
+
+secret = boto3.client("secretsmanager", region_name=os.environ["AWS_REGION"]).get_secret_value(
+    SecretId=os.environ["SMTP_SECRET_ARN"]
+)
+data = json.loads(secret["SecretString"])
+required = ("SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM")
+missing = [key for key in required if not str(data.get(key, "")).strip()]
+if missing:
+    raise RuntimeError(f"SMTP secret is missing required keys: {', '.join(missing)}")
+
+lines = [f"{key}={json.dumps(str(data[key]), ensure_ascii=False)}" for key in required]
+Path("/tmp/hufsolve-smtp-env").write_text("\n".join(lines) + "\n", encoding="utf-8")
+Path("/tmp/hufsolve-smtp-env").chmod(0o600)
+PY
+fi
+
 install -m 600 /dev/null /opt/hufsolve/app/.env
 cat >/opt/hufsolve/app/.env <<ENV
 APP_ENV=aws
@@ -67,6 +92,10 @@ BEDROCK_REVIEW_MODEL_ID=${BEDROCK_REVIEW_MODEL_ID}
 AUTO_CREATE_TABLES=false
 AUTO_SEED=false
 ENV
+if [[ -f /tmp/hufsolve-smtp-env ]]; then
+  cat /tmp/hufsolve-smtp-env >>/opt/hufsolve/app/.env
+  rm -f /tmp/hufsolve-smtp-env
+fi
 
 python3.11 -m backend.app.bootstrap --seed-if-empty
 

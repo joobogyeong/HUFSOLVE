@@ -85,6 +85,10 @@ Parameters:
     Type: String
     Default: http://localhost:5173
     Description: CORS origin for the deployed frontend.
+  SmtpSecretArn:
+    Type: String
+    Default: ""
+    Description: Optional Secrets Manager ARN containing SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, and SMTP_FROM.
   LlmReviewEnabled:
     Type: String
     Default: "false"
@@ -113,6 +117,7 @@ Parameters:
 Conditions:
   HasKeyPair: !Not [!Equals [!Ref KeyName, ""]]
   AssignPublicIp: !Equals [!Ref AssignPublicIpToInstances, "true"]
+  HasSmtpSecret: !Not [!Equals [!Ref SmtpSecretArn, ""]]
 
 Resources:
   JudgeDeadLetterQueue:
@@ -314,7 +319,11 @@ Resources:
               - Effect: Allow
                 Action:
                   - secretsmanager:GetSecretValue
-                Resource: !GetAtt Database.MasterUserSecret.SecretArn
+                Resource: !If
+                  - HasSmtpSecret
+                  - - !GetAtt Database.MasterUserSecret.SecretArn
+                    - !Ref SmtpSecretArn
+                  - - !GetAtt Database.MasterUserSecret.SecretArn
               - Effect: Allow
                 Action:
                   - s3:ListBucket
@@ -538,6 +547,30 @@ Resources:
             Path("/tmp/hufsolve-database-url").chmod(0o600)
             PY
             DATABASE_URL=$(cat /tmp/hufsolve-database-url)
+            SMTP_SECRET_ARN='${SmtpSecretArn}'
+            if [[ -n "$SMTP_SECRET_ARN" ]]; then
+              export SMTP_SECRET_ARN
+              python3.11 - <<'PY'
+            import json
+            import os
+            from pathlib import Path
+
+            import boto3
+
+            secret = boto3.client("secretsmanager", region_name="${AWS::Region}").get_secret_value(
+                SecretId=os.environ["SMTP_SECRET_ARN"]
+            )
+            data = json.loads(secret["SecretString"])
+            required = ("SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM")
+            missing = [key for key in required if not str(data.get(key, "")).strip()]
+            if missing:
+                raise RuntimeError(f"SMTP secret is missing required keys: {', '.join(missing)}")
+
+            lines = [f"{key}={json.dumps(str(data[key]), ensure_ascii=False)}" for key in required]
+            Path("/tmp/hufsolve-smtp-env").write_text("\n".join(lines) + "\n", encoding="utf-8")
+            Path("/tmp/hufsolve-smtp-env").chmod(0o600)
+            PY
+            fi
             install -m 600 /dev/null /opt/hufsolve/app/.env
             cat >/opt/hufsolve/app/.env <<ENV
             APP_ENV=aws
@@ -556,7 +589,11 @@ Resources:
             AUTO_CREATE_TABLES=false
             AUTO_SEED=false
             ENV
+            if [[ -f /tmp/hufsolve-smtp-env ]]; then
+              cat /tmp/hufsolve-smtp-env >>/opt/hufsolve/app/.env
+            fi
             rm -f /tmp/hufsolve-database-url
+            rm -f /tmp/hufsolve-smtp-env
             python3.11 -m backend.app.bootstrap --seed-if-empty
             touch /var/log/hufsolve-api.log
             cat >/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json <<'CWAGENT'
@@ -1110,6 +1147,9 @@ Outputs:
     Value: !GetAtt Database.Endpoint.Address
   DatabaseSecretArn:
     Value: !GetAtt Database.MasterUserSecret.SecretArn
+  SmtpSecretArn:
+    Condition: HasSmtpSecret
+    Value: !Ref SmtpSecretArn
   ArtifactBucketName:
     Value: !Ref ArtifactBucket
   ApiLogGroupName:
