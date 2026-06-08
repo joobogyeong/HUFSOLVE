@@ -78,7 +78,11 @@ interface CreateExamAttemptRequest {
   roomCode: string;
   studentId: string;
   studentName: string;
-  status: string;
+  answers: {
+    problemId: number;
+    language: "python";
+    sourceCode: string;
+  }[];
 }
 
 interface RequestOptions {
@@ -229,6 +233,10 @@ export async function fetchExamAttempts(studentId: string): Promise<ExamHistory[
   return request<ExamHistory[]>(
     `/exam-attempts?studentId=${encodeURIComponent(studentId)}`,
   );
+}
+
+export async function getExamAttempt(attemptId: number): Promise<ExamHistory> {
+  return request<ExamHistory>(`/exam-attempts/${attemptId}`);
 }
 
 export async function getReport(reportId: number): Promise<LlmReport> {

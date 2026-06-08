@@ -182,6 +182,16 @@ def _load_attempt(db: Session, attempt_id: int) -> ExamAttempt:
 
 
 def _load_attempt_submissions(db: Session, attempt: ExamAttempt) -> list[Submission]:
+    linked_submissions = (
+        db.query(Submission)
+        .options(joinedload(Submission.problem), joinedload(Submission.artifact))
+        .filter(Submission.exam_attempt_id == attempt.id)
+        .order_by(Submission.problem_id.asc())
+        .all()
+    )
+    if linked_submissions:
+        return linked_submissions
+
     previous_attempt = (
         db.query(ExamAttempt)
         .filter(

@@ -2,6 +2,10 @@ from __future__ import annotations
 
 
 class LocalQueueClient:
+    def enqueue_submissions(self, submission_ids: list[int]) -> list[int]:
+        # Local workers claim PENDING submissions directly from the database.
+        return []
+
     def enqueue_submission(self, submission_id: int) -> None:
         # Local workers claim PENDING submissions directly from the database.
         return None

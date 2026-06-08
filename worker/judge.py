@@ -9,6 +9,10 @@ from backend.app.artifact_service import (
     store_sample_run_result,
     store_submission_result,
 )
+from backend.app.attempt_service import (
+    enqueue_llm_report_or_mark_error,
+    finalize_exam_attempt,
+)
 from backend.app.database import SessionLocal
 from backend.app.models import SampleRun, Submission
 from worker.docker_runner import run_python_code
@@ -59,6 +63,11 @@ def _judge_submission(db: Session, submission_id: int) -> None:
         raise RuntimeError(f"Submission {submission_id} not found")
 
     if submission.status in TERMINAL_STATUSES:
+        report = finalize_exam_attempt(db, submission.exam_attempt_id)
+        db.commit()
+        if report is not None:
+            db.refresh(report)
+            enqueue_llm_report_or_mark_error(db, report)
         return
 
     problem = submission.problem
@@ -141,7 +150,11 @@ def _judge_submission(db: Session, submission_id: int) -> None:
     submission.execution_time_ms = max_execution_time_ms
     submission.memory_mb = 0
     submission.error_message = error_message
+    report = finalize_exam_attempt(db, submission.exam_attempt_id)
     db.commit()
+    if report is not None:
+        db.refresh(report)
+        enqueue_llm_report_or_mark_error(db, report)
 
 
 def _judge_sample_run(db: Session, sample_run_id: int) -> None:
@@ -212,7 +225,11 @@ def _mark_system_error(db: Session, submission_id: int, message: str) -> None:
 
     submission.status = "SYSTEM_ERROR"
     submission.error_message = message[:2000]
+    report = finalize_exam_attempt(db, submission.exam_attempt_id)
     db.commit()
+    if report is not None:
+        db.refresh(report)
+        enqueue_llm_report_or_mark_error(db, report)
 
 
 def _testcase_result(

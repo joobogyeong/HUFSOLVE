@@ -4,6 +4,9 @@ from typing import Protocol
 
 
 class QueueClient(Protocol):
+    def enqueue_submissions(self, submission_ids: list[int]) -> list[int]:
+        pass
+
     def enqueue_submission(self, submission_id: int) -> None:
         pass
 
