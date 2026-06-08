@@ -8,9 +8,14 @@ from backend.app.database import SessionLocal, init_db
 from backend.app.seed import seed_database
 from worker.judge import judge_sample_run, judge_submission
 from worker.queue import WorkerMessage, build_worker_queue
+from worker.review import generate_llm_report
 
 
 def process_message(message: WorkerMessage) -> None:
+    if message.task_type == "llm_report":
+        generate_llm_report(message.resource_id)
+        return
+
     if message.task_type == "sample_run":
         judge_sample_run(message.resource_id)
         return

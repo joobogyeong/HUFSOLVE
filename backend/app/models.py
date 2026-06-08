@@ -171,6 +171,7 @@ class Problem(Base):
     constraints: Mapped[list[str]] = mapped_column(JSON, nullable=False)
     samples: Mapped[list[dict[str, str]]] = mapped_column(JSON, nullable=False)
     starter_code: Mapped[str] = mapped_column(Text, nullable=False)
+    reference_solution: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     exam: Mapped["Exam"] = relationship(back_populates="problems")
     testcases: Mapped[list["Testcase"]] = relationship(
@@ -343,6 +344,45 @@ class ExamAttempt(Base):
     )
 
     exam: Mapped["Exam"] = relationship(back_populates="attempts")
+    llm_report: Mapped["LlmReport | None"] = relationship(
+        back_populates="exam_attempt",
+        cascade="all, delete-orphan",
+    )
+
+
+class LlmReport(Base):
+    __tablename__ = "llm_reports"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    exam_attempt_id: Mapped[int] = mapped_column(
+        ForeignKey("exam_attempts.id"),
+        unique=True,
+        index=True,
+    )
+    student_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    language: Mapped[str] = mapped_column(String(16), default="ko", nullable=False)
+    status: Mapped[str] = mapped_column(String(50), default="PENDING", index=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    strengths: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    weaknesses: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    problem_reviews: Mapped[list[dict[str, object]] | None] = mapped_column(JSON, nullable=True)
+    improvement_plan: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    model_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    exam_attempt: Mapped["ExamAttempt"] = relationship(back_populates="llm_report")
+
 
 class EmailVerification(Base):
     __tablename__ = "email_verifications"

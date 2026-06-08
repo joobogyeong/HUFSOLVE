@@ -62,6 +62,9 @@ SEED_EXAMS = [
                 "starter_code": _starter(
                     ["a, b = map(int, input().split())", "# TODO: 두 수의 합을 출력하세요."]
                 ),
+                "reference_solution": _starter(
+                    ["a, b = map(int, input().split())", "print(a + b)"]
+                ),
                 "time_limit_ms": 2000,
                 "memory_limit_mb": 128,
                 "hidden_cases": [
@@ -86,6 +89,13 @@ SEED_EXAMS = [
                         "n = int(input())",
                         "arr = list(map(int, input().split()))",
                         "# TODO: 최댓값을 출력하세요.",
+                    ]
+                ),
+                "reference_solution": _starter(
+                    [
+                        "n = int(input())",
+                        "arr = list(map(int, input().split()))",
+                        "print(max(arr))",
                     ]
                 ),
                 "time_limit_ms": 2000,
@@ -114,6 +124,17 @@ SEED_EXAMS = [
                         "for _ in range(n):",
                         "    status = int(input())",
                         "    # TODO: 성공 응답을 세어보세요.",
+                        "print(count)",
+                    ]
+                ),
+                "reference_solution": _starter(
+                    [
+                        "n = int(input())",
+                        "count = 0",
+                        "for _ in range(n):",
+                        "    status = int(input())",
+                        "    if 200 <= status < 300:",
+                        "        count += 1",
                         "print(count)",
                     ]
                 ),
@@ -151,6 +172,22 @@ SEED_EXAMS = [
                     {"input": "())(", "output": "NO"},
                 ],
                 "starter_code": _starter(["s = input().strip()", "# TODO: 올바른 괄호인지 출력하세요."]),
+                "reference_solution": _starter(
+                    [
+                        "s = input().strip()",
+                        "balance = 0",
+                        "valid = True",
+                        "for ch in s:",
+                        "    if ch == '(':",
+                        "        balance += 1",
+                        "    else:",
+                        "        balance -= 1",
+                        "    if balance < 0:",
+                        "        valid = False",
+                        "        break",
+                        "print('YES' if valid and balance == 0 else 'NO')",
+                    ]
+                ),
                 "time_limit_ms": 2000,
                 "memory_limit_mb": 128,
                 "hidden_cases": [
@@ -177,6 +214,20 @@ SEED_EXAMS = [
                         "# TODO: 최대 회의 수를 출력하세요.",
                     ]
                 ),
+                "reference_solution": _starter(
+                    [
+                        "n = int(input())",
+                        "meetings = [tuple(map(int, input().split())) for _ in range(n)]",
+                        "meetings.sort(key=lambda item: (item[1], item[0]))",
+                        "count = 0",
+                        "last_end = 0",
+                        "for start, end in meetings:",
+                        "    if start >= last_end:",
+                        "        count += 1",
+                        "        last_end = end",
+                        "print(count)",
+                    ]
+                ),
                 "time_limit_ms": 3000,
                 "memory_limit_mb": 256,
                 "hidden_cases": [
@@ -193,6 +244,7 @@ def seed_database(db: Session) -> None:
     if db.query(Exam).first() is None:
         _seed_exams(db)
 
+    synchronize_seed_problem_solutions(db)
     synchronize_reference_data(db)
     synchronize_problem_artifacts(db)
     synchronize_execution_artifacts(db)
@@ -236,6 +288,22 @@ def synchronize_reference_data(db: Session) -> None:
                 )
             )
             db.flush()
+
+
+def synchronize_seed_problem_solutions(db: Session) -> None:
+    solution_by_key = {
+        (exam_data["room_code"], problem_data["title"]): problem_data.get(
+            "reference_solution"
+        )
+        for exam_data in SEED_EXAMS
+        for problem_data in exam_data["problems"]
+    }
+    for exam in db.query(Exam).order_by(Exam.id.asc()).all():
+        for problem in exam.problems:
+            solution = solution_by_key.get((exam.room_code, problem.title))
+            if solution and not problem.reference_solution:
+                problem.reference_solution = solution
+    db.flush()
 
 
 def synchronize_problem_artifacts(db: Session) -> None:

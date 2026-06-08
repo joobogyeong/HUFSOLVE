@@ -1,4 +1,4 @@
-import type { ExamHistory, JudgeStatus, MockExam, ProblemResult } from "./types";
+import type { ExamHistory, JudgeStatus, LlmReport, MockExam, ProblemResult } from "./types";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000").replace(
   /\/$/,
@@ -229,6 +229,10 @@ export async function fetchExamAttempts(studentId: string): Promise<ExamHistory[
   return request<ExamHistory[]>(
     `/exam-attempts?studentId=${encodeURIComponent(studentId)}`,
   );
+}
+
+export async function getReport(reportId: number): Promise<LlmReport> {
+  return request<LlmReport>(`/reports/${reportId}`);
 }
 
 export async function sendEmailCode(payload: {

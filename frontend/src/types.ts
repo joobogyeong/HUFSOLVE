@@ -1,4 +1,4 @@
-export type Screen = "login" | "home" | "exam" | "my";
+export type Screen = "login" | "home" | "exam" | "my" | "report";
 
 export type JudgeStatus =
   | "UNSUBMITTED"
@@ -57,6 +57,9 @@ export interface ProblemResult {
 
 export interface ExamHistory {
   id: string;
+  attemptId?: number;
+  reportId?: number | null;
+  reportStatus?: string | null;
   title: string;
   roomCode: string;
   submittedAt: string;
@@ -69,4 +72,36 @@ export interface ExamHistory {
 export interface StudentProfile {
   studentId: string;
   name: string;
+}
+
+export type LlmReportStatus =
+  | "PENDING"
+  | "RUNNING"
+  | "COMPLETED"
+  | "SYSTEM_ERROR";
+
+export interface ProblemReview {
+  problemId: number;
+  title: string;
+  status: string;
+  score: number;
+  feedback: string;
+  missingConcepts: string[];
+  nextStep: string;
+}
+
+export interface LlmReport {
+  reportId: number;
+  attemptId: number;
+  status: LlmReportStatus;
+  language: "ko";
+  modelId: string;
+  summary: string | null;
+  strengths: string[];
+  weaknesses: string[];
+  problemReviews: ProblemReview[];
+  improvementPlan: string[];
+  errorMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
 }

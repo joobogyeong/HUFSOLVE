@@ -76,6 +76,18 @@
     "ParameterValue": "http://localhost:5173"
   },
   {
+    "ParameterKey": "LlmReviewEnabled",
+    "ParameterValue": "false"
+  },
+  {
+    "ParameterKey": "BedrockReviewRegion",
+    "ParameterValue": "ap-northeast-2"
+  },
+  {
+    "ParameterKey": "BedrockReviewModelId",
+    "ParameterValue": "global.amazon.nova-2-lite-v1:0"
+  },
+  {
     "ParameterKey": "DbName",
     "ParameterValue": "hufsolve"
   },

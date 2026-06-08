@@ -85,6 +85,21 @@ Parameters:
     Type: String
     Default: http://localhost:5173
     Description: CORS origin for the deployed frontend.
+  LlmReviewEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
+    Description: Enable Bedrock-backed LLM code review reports on workers.
+  BedrockReviewRegion:
+    Type: String
+    Default: ap-northeast-2
+    Description: Bedrock region for the selected LLM review model.
+  BedrockReviewModelId:
+    Type: String
+    Default: global.amazon.nova-2-lite-v1:0
+    Description: Bedrock model ID used for LLM code review reports.
   DbName:
     Type: String
     Default: hufsolve
@@ -392,6 +407,18 @@ Resources:
                 Resource:
                   - !Sub ${ArtifactBucket.Arn}/submissions/*
                   - !Sub ${ArtifactBucket.Arn}/sample-runs/*
+        - PolicyName: hufsolve-worker-bedrock-review
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource:
+                  - !Sub arn:${AWS::Partition}:bedrock:*:${AWS::AccountId}:inference-profile/${BedrockReviewModelId}
+                  - !Sub arn:${AWS::Partition}:bedrock:*::inference-profile/${BedrockReviewModelId}
+                  - !Sub arn:${AWS::Partition}:bedrock:*::foundation-model/amazon.nova-2-lite-v1:0
 
   ApiInstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -523,6 +550,9 @@ Resources:
             SQS_QUEUE_URL=${JudgeQueue}
             ARTIFACT_BACKEND=s3
             S3_BUCKET_NAME=${ArtifactBucket}
+            LLM_REVIEW_ENABLED=${LlmReviewEnabled}
+            BEDROCK_REVIEW_REGION=${BedrockReviewRegion}
+            BEDROCK_REVIEW_MODEL_ID=${BedrockReviewModelId}
             AUTO_CREATE_TABLES=false
             AUTO_SEED=false
             ENV
@@ -640,6 +670,9 @@ Resources:
             SQS_QUEUE_URL=${JudgeQueue}
             ARTIFACT_BACKEND=s3
             S3_BUCKET_NAME=${ArtifactBucket}
+            LLM_REVIEW_ENABLED=${LlmReviewEnabled}
+            BEDROCK_REVIEW_REGION=${BedrockReviewRegion}
+            BEDROCK_REVIEW_MODEL_ID=${BedrockReviewModelId}
             WORKER_MAX_RECEIVE_COUNT=3
             JUDGE_DOCKER_IMAGE=$JUDGE_DOCKER_IMAGE
             JUDGE_MAX_OUTPUT_BYTES=65536

@@ -9,3 +9,7 @@ class LocalQueueClient:
     def enqueue_sample_run(self, sample_run_id: int) -> None:
         # Local workers claim PENDING sample runs directly from the database.
         return None
+
+    def enqueue_llm_report(self, report_id: int) -> None:
+        # Local workers claim PENDING LLM reports directly from the database.
+        return None
