@@ -167,11 +167,17 @@ class SampleRunRead(CamelModel):
         )
 
 
+class ExamAnswerCreate(CamelModel):
+    problem_id: int = Field(alias="problemId")
+    language: Literal["python"] = "python"
+    source_code: str = Field(alias="sourceCode", min_length=1, max_length=100_000)
+
+
 class ExamAttemptCreate(CamelModel):
     room_code: str = Field(alias="roomCode", min_length=1)
     student_id: str = Field(alias="studentId", min_length=1)
     student_name: str = Field(alias="studentName", min_length=1)
-    status: str = "최종 제출"
+    answers: list[ExamAnswerCreate] = Field(min_length=1)
 
 
 class ExamAttemptRead(CamelModel):

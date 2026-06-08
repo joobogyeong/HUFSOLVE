@@ -42,6 +42,17 @@ python scripts/load_test.py \
   --concurrency 5
 ```
 
+시험 단위 일괄 제출 예시:
+
+```bash
+python scripts/load_test.py \
+  --scenario exam \
+  --api-base-url http://127.0.0.1:8000 \
+  --room-code HUF-2026 \
+  --total 20 \
+  --concurrency 5
+```
+
 AWS 예시:
 
 ```bash
@@ -70,6 +81,8 @@ python scripts/load_test.py \
 - 최종 채점 완료 latency
 - 상태별 제출 수
 - timeout/error sample
+- 시험 시나리오의 `GRADING` 응답 latency와 응시 완료 latency
+- 시험 시나리오의 고유 응시 수와 중복 응시 결과 수
 
 ## Validation Criteria
 
@@ -77,3 +90,4 @@ python scripts/load_test.py \
 - SQS `ApproximateNumberOfMessagesVisible`가 증가한 뒤 Worker 처리에 따라 감소한다.
 - Worker Auto Scaling Group desired capacity가 queue alarm에 따라 증가한다.
 - 대부분의 제출이 `--poll-timeout` 안에 terminal status에 도달한다.
+- 시험 단위 시나리오에서 `duplicateAttemptCount`가 0이고 응시 기록이 terminal status에 도달한다.

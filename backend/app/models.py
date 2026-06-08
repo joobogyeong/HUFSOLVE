@@ -228,6 +228,11 @@ class Submission(Base):
     __tablename__ = "submissions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    exam_attempt_id: Mapped[int | None] = mapped_column(
+        ForeignKey("exam_attempts.id"),
+        index=True,
+        nullable=True,
+    )
     exam_id: Mapped[int] = mapped_column(ForeignKey("exams.id"), index=True)
     problem_id: Mapped[int] = mapped_column(ForeignKey("problems.id"), index=True)
     student_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -254,6 +259,7 @@ class Submission(Base):
     )
 
     problem: Mapped["Problem"] = relationship(back_populates="submissions")
+    exam_attempt: Mapped["ExamAttempt | None"] = relationship(back_populates="submissions")
     artifact: Mapped["SubmissionArtifact | None"] = relationship(
         back_populates="submission",
         cascade="all, delete-orphan",
@@ -330,6 +336,7 @@ class ExamAttempt(Base):
     __tablename__ = "exam_attempts"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    finalization_key: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     exam_id: Mapped[int] = mapped_column(ForeignKey("exams.id"), index=True)
     student_id: Mapped[str] = mapped_column(String(64), index=True)
     student_name: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -344,6 +351,7 @@ class ExamAttempt(Base):
     )
 
     exam: Mapped["Exam"] = relationship(back_populates="attempts")
+    submissions: Mapped[list["Submission"]] = relationship(back_populates="exam_attempt")
     llm_report: Mapped["LlmReport | None"] = relationship(
         back_populates="exam_attempt",
         cascade="all, delete-orphan",

@@ -26,6 +26,7 @@ from fastapi.testclient import TestClient
 from backend.app.database import Base, SessionLocal, engine, init_db
 from backend.app.main import app
 from backend.app.artifacts import S3ArtifactStore, get_json, get_text
+from backend.app.attempt_service import finalize_exam_attempt
 from backend.app.llm_review import _load_attempt_submissions, build_review_prompt, call_bedrock_review
 from backend.app.models import (
     Course,
@@ -48,7 +49,7 @@ from backend.app.verify_storage import build_storage_report
 from scripts.load_test import TERMINAL_STATUSES as LOAD_TEST_TERMINAL_STATUSES
 from scripts.load_test import format_error as format_load_test_error
 from scripts.load_test import submit_and_wait
-from worker.judge import judge_sample_run, judge_submission
+from worker.judge import judge_sample_run, judge_submission, mark_submission_system_error
 from worker.queue import LocalWorkerQueue, SqsWorkerQueue
 from worker.review import generate_llm_report
 from worker.docker_runner import _communicate_limited, run_python_code, settings as docker_runner_settings
@@ -310,6 +311,17 @@ class HufsolveIntegrationTest(unittest.TestCase):
             },
         )
 
+    def test_sqs_queue_batches_submissions_and_returns_partial_failures(self) -> None:
+        queue = SqsQueueClient.__new__(SqsQueueClient)
+        queue._client = FakeSqsBatchSendClient(failed_submission_ids={3, 12})
+
+        failed_ids = queue.enqueue_submissions(list(range(1, 13)))
+
+        self.assertEqual(failed_ids, [3, 12])
+        self.assertEqual([len(batch) for batch in queue._client.batches], [10, 2])
+        first_payload = json.loads(queue._client.batches[0][0]["MessageBody"])
+        self.assertEqual(first_payload, {"submission_id": 1})
+
     def test_sqs_worker_parses_sample_run_reference(self) -> None:
         queue = SqsWorkerQueue.__new__(SqsWorkerQueue)
         queue._client = FakeSqsClient(
@@ -514,48 +526,33 @@ class HufsolveIntegrationTest(unittest.TestCase):
     def test_load_test_treats_output_limit_as_terminal(self) -> None:
         self.assertIn("OUTPUT_LIMIT_EXCEEDED", LOAD_TEST_TERMINAL_STATUSES)
 
-    def test_exam_attempt_history_uses_backend_calculated_score(self) -> None:
-        self._create_pending_submission(student_id="20260001", status="ACCEPTED")
-
+    def test_exam_attempt_bulk_create_is_idempotent_and_supports_detail_get(self) -> None:
         with TestClient(app) as client:
-            created = client.post(
-                "/exam-attempts",
-                json={
-                    "roomCode": "HUF-2026",
-                    "studentId": "20260001",
-                    "studentName": "테스트 학생",
-                    "status": "최종 제출",
-                },
-            )
-            self.assertEqual(created.status_code, 201)
-            created_payload = created.json()
-            self.assertEqual(created.json()["passedProblems"], 1)
-            self.assertEqual(created.json()["totalProblems"], 3)
-            self.assertEqual(created.json()["score"], 33)
-            self.assertIsNotNone(created.json()["reportId"])
+            created = self._create_exam_attempt(client, "20260001")
+            self.assertEqual(created.status_code, 202)
+            payload = created.json()
+            self.assertEqual(payload["status"], "GRADING")
+            self.assertEqual(payload["totalProblems"], 3)
 
-            history = client.get("/exam-attempts?studentId=20260001")
-            self.assertEqual(history.status_code, 200)
-            self.assertEqual(len(history.json()), 1)
-            self.assertEqual(history.json()[0]["roomCode"], "HUF-2026")
-            self.assertIsNotNone(history.json()[0]["reportId"])
+            repeated = self._create_exam_attempt(client, "20260001")
+            self.assertEqual(repeated.status_code, 202)
+            self.assertEqual(repeated.json()["attemptId"], payload["attemptId"])
 
-            repeated = client.post(
-                "/exam-attempts",
-                json={
-                    "roomCode": "HUF-2026",
-                    "studentId": "20260001",
-                    "studentName": "테스트 학생",
-                    "status": "최종 제출",
-                },
-            )
-            self.assertEqual(repeated.status_code, 201)
-            self.assertEqual(repeated.json()["attemptId"], created_payload["attemptId"])
-            self.assertEqual(repeated.json()["reportId"], created_payload["reportId"])
-            self.assertEqual(repeated.json()["passedProblems"], 1)
+            detail = client.get(f"/exam-attempts/{payload['attemptId']}")
+            self.assertEqual(detail.status_code, 200)
+            self.assertEqual(detail.json()["attemptId"], payload["attemptId"])
 
         db = SessionLocal()
         try:
+            attempt = db.get(ExamAttempt, payload["attemptId"])
+            submissions = (
+                db.query(Submission)
+                .filter(Submission.exam_attempt_id == attempt.id)
+                .order_by(Submission.problem_id)
+                .all()
+            )
+            self.assertEqual(len(submissions), 3)
+            self.assertEqual(db.query(ExamAttempt).count(), 1)
             self.assertEqual(
                 db.query(Student).filter(Student.student_number == "20260001").count(),
                 1,
@@ -564,62 +561,87 @@ class HufsolveIntegrationTest(unittest.TestCase):
         finally:
             db.close()
 
-    def test_exam_attempt_without_submissions_does_not_enqueue_llm_report(self) -> None:
-        with TestClient(app) as client:
-            created = client.post(
-                "/exam-attempts",
-                json={
-                    "roomCode": "HUF-2026",
-                    "studentId": "20260000",
-                    "studentName": "미제출 학생",
-                    "status": "최종 제출",
-                },
+    def test_exam_attempt_marks_partial_queue_failures_without_losing_other_jobs(self) -> None:
+        fake_queue = MagicMock()
+        fake_queue.enqueue_submissions.side_effect = lambda submission_ids: [submission_ids[1]]
+
+        with patch("backend.app.routers.attempts.get_queue_client", return_value=fake_queue):
+            with TestClient(app) as client:
+                payload = self._create_exam_attempt(client, "20260009").json()
+
+        db = SessionLocal()
+        try:
+            attempt = db.get(ExamAttempt, payload["attemptId"])
+            submissions = (
+                db.query(Submission)
+                .filter(Submission.exam_attempt_id == attempt.id)
+                .order_by(Submission.id)
+                .all()
             )
-            self.assertEqual(created.status_code, 201)
-            self.assertIsNone(created.json()["reportId"])
-
-        self.assertIsNone(LocalWorkerQueue().receive())
-
-    def test_exam_attempt_creates_pending_llm_report(self) -> None:
-        self._create_pending_submission(student_id="20260002", status="ACCEPTED")
-
-        with TestClient(app) as client:
-            created = client.post(
-                "/exam-attempts",
-                json={
-                    "roomCode": "HUF-2026",
-                    "studentId": "20260002",
-                    "studentName": "리포트 학생",
-                    "status": "최종 제출",
-                },
+            self.assertEqual(attempt.status, "GRADING")
+            self.assertEqual(
+                [submission.status for submission in submissions],
+                ["PENDING", "SYSTEM_ERROR", "PENDING"],
             )
-            self.assertEqual(created.status_code, 201)
-            report_id = created.json()["reportId"]
-            self.assertIsNotNone(report_id)
-            report_response = client.get(f"/reports/{report_id}")
-            self.assertEqual(report_response.status_code, 200)
-            self.assertEqual(report_response.json()["status"], "PENDING")
-            self.assertEqual(report_response.json()["language"], "ko")
+        finally:
+            db.close()
 
-        message = LocalWorkerQueue().receive()
-        self.assertEqual(message.task_type, "llm_report")
-        self.assertEqual(message.resource_id, report_id)
-
-    def test_worker_generates_korean_fallback_llm_report(self) -> None:
-        self._create_pending_submission(student_id="20260003", status="ACCEPTED")
+    def test_worker_finalizes_attempt_only_after_last_terminal_submission(self) -> None:
         with TestClient(app) as client:
-            created = client.post(
-                "/exam-attempts",
-                json={
-                    "roomCode": "HUF-2026",
-                    "studentId": "20260003",
-                    "studentName": "리포트 학생",
-                    "status": "최종 제출",
-                },
-            )
-            report_id = created.json()["reportId"]
+            attempt_id = self._create_exam_attempt(client, "20260002").json()["attemptId"]
 
-        LocalWorkerQueue().receive()
+        db = SessionLocal()
+        try:
+            submissions = (
+                db.query(Submission)
+                .filter(Submission.exam_attempt_id == attempt_id)
+                .order_by(Submission.id)
+                .all()
+            )
+            for submission in submissions[:-1]:
+                submission.status = "ACCEPTED"
+                submission.score = 100
+            self.assertIsNone(finalize_exam_attempt(db, attempt_id))
+            db.commit()
+            self.assertEqual(db.get(ExamAttempt, attempt_id).status, "GRADING")
+            last_submission_id = submissions[-1].id
+        finally:
+            db.close()
+
+        mark_submission_system_error(last_submission_id, "docker unavailable")
+
+        db = SessionLocal()
+        try:
+            attempt = db.get(ExamAttempt, attempt_id)
+            self.assertEqual(attempt.status, "SYSTEM_ERROR")
+            self.assertEqual(attempt.passed_problems, 2)
+            self.assertEqual(attempt.score, 67)
+            self.assertEqual(
+                db.query(LlmReport).filter(LlmReport.exam_attempt_id == attempt_id).count(),
+                1,
+            )
+            self.assertIsNone(finalize_exam_attempt(db, attempt_id))
+        finally:
+            db.close()
+
+    def test_worker_generates_korean_fallback_llm_report_for_attempt(self) -> None:
+        with TestClient(app) as client:
+            attempt_id = self._create_exam_attempt(client, "20260003").json()["attemptId"]
+
+        db = SessionLocal()
+        try:
+            submissions = db.query(Submission).filter(
+                Submission.exam_attempt_id == attempt_id
+            ).all()
+            for submission in submissions:
+                submission.status = "ACCEPTED"
+                submission.score = 100
+            report = finalize_exam_attempt(db, attempt_id)
+            db.commit()
+            report_id = report.id
+        finally:
+            db.close()
+
         generate_llm_report(report_id)
 
         db = SessionLocal()
@@ -628,39 +650,21 @@ class HufsolveIntegrationTest(unittest.TestCase):
             self.assertEqual(report.status, "COMPLETED")
             self.assertEqual(report.language, "ko")
             self.assertIn("리포트", report.summary)
-            self.assertGreater(len(report.problem_reviews), 0)
+            self.assertEqual(len(report.problem_reviews), 3)
         finally:
             db.close()
 
-    def test_llm_prompt_includes_problem_reference_solution_and_submitted_code(self) -> None:
-        submission_id = self._create_pending_submission(
-            student_id="20260004",
-            status="ACCEPTED",
-        )
-
+    def test_llm_prompt_uses_attempt_linked_submissions(self) -> None:
         with TestClient(app) as client:
-            client.post(
-                "/exam-attempts",
-                json={
-                    "roomCode": "HUF-2026",
-                    "studentId": "20260004",
-                    "studentName": "프롬프트 학생",
-                    "status": "최종 제출",
-                },
-            )
+            attempt_id = self._create_exam_attempt(client, "20260004").json()["attemptId"]
 
         db = SessionLocal()
         try:
-            submission = db.get(Submission, submission_id)
-            attempt = (
-                db.query(ExamAttempt)
-                .filter(ExamAttempt.student_id == "20260004")
-                .order_by(ExamAttempt.id.desc())
-                .first()
-            )
-            prompt = build_review_prompt(attempt, [submission])
-            payload = json.loads(prompt)
-            item = payload["submissions"][0]
+            attempt = db.get(ExamAttempt, attempt_id)
+            submissions = _load_attempt_submissions(db, attempt)
+            self.assertEqual(len(submissions), 3)
+            prompt = build_review_prompt(attempt, submissions)
+            item = json.loads(prompt)["submissions"][0]
             self.assertIn("problem", item)
             self.assertIn("referenceSolutionCode", item)
             self.assertIn("submittedCode", item)
@@ -706,46 +710,24 @@ class HufsolveIntegrationTest(unittest.TestCase):
         self.assertEqual(payload["inferenceConfig"]["maxTokens"], 2500)
         self.assertEqual(report["summary"], "테스트 리포트입니다.")
 
-    def test_llm_report_uses_latest_submission_per_student_problem(self) -> None:
-        first_id = self._create_pending_submission(
-            student_id="20260005",
-            status="WRONG_ANSWER",
-            source_code="print('old')",
+    def _create_exam_attempt(self, client: TestClient, student_id: str):
+        exam = client.get("/exams").json()[0]
+        return client.post(
+            "/exam-attempts",
+            json={
+                "roomCode": exam["roomCode"],
+                "studentId": student_id,
+                "studentName": "테스트 학생",
+                "answers": [
+                    {
+                        "problemId": problem["id"],
+                        "language": "python",
+                        "sourceCode": "a, b = map(int, input().split())\nprint(a+b)",
+                    }
+                    for problem in exam["problems"]
+                ],
+            },
         )
-        second_id = self._create_pending_submission(
-            student_id="20260005",
-            status="ACCEPTED",
-            source_code="a, b = map(int, input().split())\nprint(a+b)",
-        )
-
-        with TestClient(app) as client:
-            client.post(
-                "/exam-attempts",
-                json={
-                    "roomCode": "HUF-2026",
-                    "studentId": "20260005",
-                    "studentName": "최신제출 학생",
-                    "status": "최종 제출",
-                },
-            )
-
-        db = SessionLocal()
-        try:
-            attempt = (
-                db.query(ExamAttempt)
-                .filter(ExamAttempt.student_id == "20260005")
-                .order_by(ExamAttempt.id.desc())
-                .first()
-            )
-            submissions = _load_attempt_submissions(db, attempt)
-            self.assertEqual([submission.id for submission in submissions], [second_id])
-            self.assertNotIn(first_id, [submission.id for submission in submissions])
-
-            prompt = build_review_prompt(attempt, submissions)
-            item = json.loads(prompt)["submissions"][0]
-            self.assertEqual(item["studentProblemKey"], "20260005_1")
-        finally:
-            db.close()
 
     def _create_pending_submission(
         self,
@@ -807,6 +789,23 @@ class FakeSqsSendClient:
 
     def send_message(self, **kwargs: object) -> None:
         self.messages.append(kwargs)
+
+
+class FakeSqsBatchSendClient:
+    def __init__(self, failed_submission_ids: set[int]) -> None:
+        self.failed_submission_ids = failed_submission_ids
+        self.batches: list[list[dict[str, object]]] = []
+
+    def send_message_batch(self, **kwargs: object) -> dict[str, object]:
+        entries = list(kwargs["Entries"])
+        self.batches.append(entries)
+        failed = [
+            {"Id": entry["Id"], "Code": "InternalError"}
+            for entry in entries
+            if json.loads(entry["MessageBody"])["submission_id"]
+            in self.failed_submission_ids
+        ]
+        return {"Failed": failed}
 
 
 class FakeS3ListClient:

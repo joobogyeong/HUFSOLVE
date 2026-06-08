@@ -1,5 +1,3 @@
-export type Screen = "login" | "home" | "exam" | "my" | "report";
-
 export type JudgeStatus =
   | "UNSUBMITTED"
   | "PENDING"
@@ -72,6 +70,19 @@ export interface ExamHistory {
 export interface StudentProfile {
   studentId: string;
   name: string;
+}
+
+export interface ActiveExamDraft {
+  studentId: string;
+  studentName: string;
+  roomCode: string;
+  startedAt: number;
+  endsAt: number;
+  currentProblemId: number;
+  answers: Record<number, string>;
+  runInputs: Record<number, string>;
+  submissionState: "editing" | "submitting" | "failed";
+  locked: boolean;
 }
 
 export type LlmReportStatus =
