@@ -57,7 +57,7 @@ export function MyPage() {
               <div className="rounded-full bg-zinc-950 px-4 py-2 text-center font-black text-white">{attempt.status === "GRADING" ? "-" : `${attempt.score}점`}</div>
               <button
                 type="button"
-                onClick={() => navigate(`/my/attempts/${attempt.attemptId}/report`)}
+                onClick={() => navigate(`/my/attempts/${attempt.attemptId}`)}
                 disabled={!attempt.reportId}
                 className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-zinc-950 bg-white px-4 text-sm font-black text-zinc-950 transition hover:bg-zinc-950 hover:text-white disabled:cursor-not-allowed disabled:border-zinc-200 disabled:text-zinc-400 disabled:hover:bg-white"
               >
