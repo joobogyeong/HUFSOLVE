@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+
 from sqlalchemy.orm import Session
 
 from backend.app.artifact_service import (
@@ -88,13 +90,22 @@ def _judge_submission(db: Session, submission_id: int) -> None:
     error_message: str | None = None
     testcase_results: list[dict[str, object]] = []
 
-    for testcase in testcases:
-        result = run_python_code(
-            source_code=source_code,
-            input_data=str(testcase["input"]),
-            time_limit_ms=problem.time_limit_ms,
-            memory_limit_mb=problem.memory_limit_mb,
-        )
+    # 모든 테스트케이스를 병렬로 동시에 실행
+    max_workers = min(len(testcases), 8)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [
+            executor.submit(
+                run_python_code,
+                source_code,
+                str(testcase["input"]),
+                problem.time_limit_ms,
+                problem.memory_limit_mb,
+            )
+            for testcase in testcases
+        ]
+        all_results = [f.result() for f in futures]
+
+    for testcase, result in zip(testcases, all_results):
         execution_time_ms = int(result.get("execution_time_ms", 0))
         max_execution_time_ms = max(max_execution_time_ms, execution_time_ms)
         status = str(result["status"])
