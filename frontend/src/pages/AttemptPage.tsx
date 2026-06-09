@@ -1,9 +1,26 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ClipboardList, Home, RefreshCw } from "lucide-react";
+import { ClipboardList, FileText, Home, RefreshCw } from "lucide-react";
 import { getExamAttempt, getReport } from "../api";
 import { formatDateTime } from "../format";
 import type { ExamHistory, LlmReport } from "../types";
+
+const isReportGenerating = (status?: string | null) =>
+  status === "PENDING" || status === "RUNNING";
+
+const reportButtonLabel = (attempt: ExamHistory, report: LlmReport | null) => {
+  const status = report?.status ?? attempt.reportStatus;
+  if (!attempt.reportId) {
+    return "리포트 없음";
+  }
+  if (isReportGenerating(status)) {
+    return "리포트 생성중";
+  }
+  if (status === "SYSTEM_ERROR") {
+    return "생성 실패";
+  }
+  return "리포트 보기";
+};
 
 export function AttemptPage() {
   const { attemptId = "" } = useParams();
@@ -21,10 +38,14 @@ export function AttemptPage() {
         if (cancelled) return;
         setAttempt(next);
         setNotice("");
+        let reportStatus = next.reportStatus;
         if (next.reportId) {
-          getReport(next.reportId).then((value) => !cancelled && setReport(value)).catch(() => undefined);
+          const nextReport = await getReport(next.reportId).catch(() => null);
+          if (cancelled) return;
+          setReport(nextReport);
+          reportStatus = nextReport?.status ?? reportStatus;
         }
-        if (next.status === "GRADING") {
+        if (next.status === "GRADING" || isReportGenerating(reportStatus)) {
           timer = window.setTimeout(load, 2500);
         }
       } catch {
@@ -56,8 +77,18 @@ export function AttemptPage() {
               <Metric label="통과" value={attempt.status === "GRADING" ? "-" : `${attempt.passedProblems}/${attempt.totalProblems}`} />
               <Metric label="점수" value={attempt.status === "GRADING" ? "-" : `${attempt.score}점`} />
             </div>
-            {attempt.status === "GRADING" && <div className="mt-6 inline-flex items-center gap-2 font-black"><RefreshCw className="h-4 w-4 animate-spin" />최종 결과를 기다리는 중입니다.</div>}
-            {report?.status === "COMPLETED" && <article className="glass-panel mt-6 rounded-3xl p-6"><h2 className="text-xl font-black">AI 학습 리포트</h2><p className="mt-4 whitespace-pre-wrap leading-7 text-zinc-700">{report.summary}</p></article>}
+            <div className="mt-6 flex flex-wrap gap-2">
+              {attempt.status === "GRADING" && <div className="inline-flex items-center gap-2 font-black"><RefreshCw className="h-4 w-4 animate-spin" />최종 결과를 기다리는 중입니다.</div>}
+              <button
+                type="button"
+                onClick={() => navigate(`/my/attempts/${attempt.attemptId}/report`)}
+                disabled={!attempt.reportId}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-zinc-950 bg-white px-4 text-sm font-black text-zinc-950 transition hover:bg-zinc-950 hover:text-white disabled:cursor-not-allowed disabled:border-zinc-200 disabled:text-zinc-400 disabled:hover:bg-white"
+              >
+                <FileText className="h-4 w-4" />
+                {reportButtonLabel(attempt, report)}
+              </button>
+            </div>
           </>
         )}
       </section>

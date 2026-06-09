@@ -5,6 +5,7 @@ import { ExamPage } from "./pages/ExamPage";
 import { HomePage } from "./pages/HomePage";
 import { LoginPage } from "./pages/LoginPage";
 import { MyPage } from "./pages/MyPage";
+import { ReportPage } from "./pages/ReportPage";
 
 function ProtectedRoute() {
   const { profile } = useApp();
@@ -21,6 +22,7 @@ export const createAppRouter = () =>
         { path: "/exam/:roomCode", element: <ExamPage /> },
         { path: "/my", element: <MyPage /> },
         { path: "/my/attempts/:attemptId", element: <AttemptPage /> },
+        { path: "/my/attempts/:attemptId/report", element: <ReportPage /> },
       ],
     },
     { path: "*", element: <Navigate to="/" replace /> },
