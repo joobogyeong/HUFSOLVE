@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 
 from .database import SessionLocal, init_db
+from .models import Exam
 from .seed import (
     seed_database,
     synchronize_execution_artifacts,
@@ -16,7 +17,8 @@ def bootstrap_storage(seed_if_empty: bool = False) -> None:
     db = SessionLocal()
     try:
         if seed_if_empty:
-            seed_database(db)
+            if db.query(Exam).first() is None:
+                seed_database(db)
             return
 
         synchronize_reference_data(db)

@@ -23,6 +23,7 @@ os.environ["LLM_REVIEW_ENABLED"] = "false"
 
 from fastapi.testclient import TestClient
 
+from backend.app.bootstrap import bootstrap_storage
 from backend.app.database import Base, SessionLocal, engine, init_db
 from backend.app.main import app
 from backend.app.artifacts import S3ArtifactStore, get_json, get_text
@@ -138,6 +139,12 @@ class HufsolveIntegrationTest(unittest.TestCase):
         self.assertEqual(report["exams_without_course"], 0)
         self.assertEqual(report["problems_without_active_artifact"], 0)
         self.assertEqual(report["missing_object_keys"], [])
+
+    def test_seed_if_empty_bootstrap_skips_existing_database_sync(self) -> None:
+        with patch("backend.app.bootstrap.seed_database") as seed:
+            bootstrap_storage(seed_if_empty=True)
+
+        seed.assert_not_called()
 
     def test_submission_source_and_result_are_stored_as_artifacts(self) -> None:
         source_code = "a, b = map(int, input().split())\nprint(a+b)"

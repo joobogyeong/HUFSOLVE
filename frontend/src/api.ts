@@ -248,10 +248,14 @@ export async function sendEmailCode(payload: {
   studentName: string;
   email: string;
 }) {
-  return request<{ message: string }>("/auth/send-code", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
+  return request<{ message: string }>(
+    "/auth/send-code",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    { wakeBackend: true },
+  );
 }
 
 export async function verifyEmailCode(payload: {
@@ -259,18 +263,26 @@ export async function verifyEmailCode(payload: {
   email: string;
   code: string;
 }) {
-  return request<{ verified: boolean }>("/auth/verify-code", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
+  return request<{ verified: boolean }>(
+    "/auth/verify-code",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    { wakeBackend: true },
+  );
 }
 
 export async function checkEmailVerified(payload: {
   studentId: string;
   email: string;
 }) {
-  return request<{ verified: boolean }>("/auth/check-verified", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
+  return request<{ verified: boolean }>(
+    "/auth/check-verified",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    { wakeBackend: true },
+  );
 }

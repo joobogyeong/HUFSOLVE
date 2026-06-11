@@ -37,3 +37,33 @@ describe("fetchExams", () => {
     );
   });
 });
+
+describe("authentication", () => {
+  it("wakes the backend before sending an email verification code", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ message: "sent" }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { sendEmailCode } = await import("./api");
+    await expect(
+      sendEmailCode({
+        studentId: "202600001",
+        studentName: "Demo Student",
+        email: "202600001@hufs.ac.kr",
+      }),
+    ).resolves.toEqual({ message: "sent" });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "https://wake.example.com/wake",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/auth/send-code",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+});
