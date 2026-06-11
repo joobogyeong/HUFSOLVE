@@ -1,0 +1,315 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F8FAFF"/>
+      <stop offset="1" stop-color="#EEF5FF"/>
+    </linearGradient>
+    <linearGradient id="cloud" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#F8FBFF"/>
+    </linearGradient>
+    <linearGradient id="blueCard" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F2F7FF"/>
+      <stop offset="1" stop-color="#E7F0FF"/>
+    </linearGradient>
+    <linearGradient id="violetCard" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F8F3FF"/>
+      <stop offset="1" stop-color="#EEE5FF"/>
+    </linearGradient>
+    <linearGradient id="monitorCard" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFF3FA"/>
+      <stop offset="1" stop-color="#EAFBFA"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#173B65" flood-opacity=".11"/>
+    </filter>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#173B65" flood-opacity=".10"/>
+    </filter>
+    <marker id="arrowBlue" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0 0 L12 6 L0 12 Z" fill="#2876D2"/>
+    </marker>
+    <marker id="arrowPurple" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0 0 L12 6 L0 12 Z" fill="#8353D3"/>
+    </marker>
+    <marker id="arrowPink" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0 0 L12 6 L0 12 Z" fill="#D0448B"/>
+    </marker>
+    <marker id="arrowTeal" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0 0 L12 6 L0 12 Z" fill="#168C89"/>
+    </marker>
+    <marker id="arrowOrange" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0 0 L12 6 L0 12 Z" fill="#F28C28"/>
+    </marker>
+    <style>
+      text { font-family: "Malgun Gothic", "Noto Sans KR", Arial, sans-serif; fill: #17324D; }
+      .title { font-size: 38px; font-weight: 800; letter-spacing: -.6px; }
+      .subtitle { font-size: 18px; font-weight: 500; fill: #5D7187; }
+      .cloud-title { font-size: 18px; font-weight: 800; fill: #243B53; }
+      .section { font-size: 15px; font-weight: 800; letter-spacing: .4px; }
+      .card-title { font-size: 18px; font-weight: 800; }
+      .card-sub { font-size: 13px; font-weight: 600; fill: #61758B; }
+      .small { font-size: 12px; font-weight: 600; fill: #63788D; }
+      .pill { font-size: 12px; font-weight: 800; }
+      .label { font-size: 13px; font-weight: 800; }
+      .legend { font-size: 13px; font-weight: 700; fill: #52697F; }
+    </style>
+  </defs>
+
+  <rect width="1920" height="1080" fill="url(#bg)"/>
+  <circle cx="1810" cy="90" r="170" fill="#DCEBFF" opacity=".38"/>
+  <circle cx="70" cy="1025" r="210" fill="#E7DCFF" opacity=".28"/>
+
+  <text x="70" y="74" class="title">HUFSOLVE AWS Architecture</text>
+  <text x="70" y="106" class="subtitle">비동기 자동 채점 · Bedrock AI 학습 리포트 · CloudWatch 기반 Scale-to-Zero</text>
+
+  <!-- User / Frontend -->
+  <g filter="url(#shadow)">
+    <rect x="50" y="170" width="230" height="630" rx="28" fill="#FFFFFF" stroke="#CAD9E8" stroke-width="2"/>
+  </g>
+  <rect x="70" y="190" width="190" height="34" rx="17" fill="#EDF3FA"/>
+  <text x="165" y="213" text-anchor="middle" class="section" fill="#50677E">CLIENT</text>
+
+  <g transform="translate(100 260)">
+    <circle cx="65" cy="25" r="21" fill="#6F88A2"/>
+    <circle cx="29" cy="38" r="17" fill="#9CAEC1"/>
+    <circle cx="101" cy="38" r="17" fill="#9CAEC1"/>
+    <path d="M25 102c0-32 17-50 40-50s40 18 40 50" fill="#6F88A2"/>
+    <path d="M0 102c0-25 12-39 29-39 10 0 18 5 23 14-8 8-13 17-15 25z" fill="#9CAEC1"/>
+    <path d="M130 102c0-25-12-39-29-39-10 0-18 5-23 14 8 8 13 17 15 25z" fill="#9CAEC1"/>
+  </g>
+  <text x="165" y="392" text-anchor="middle" class="card-title">학생 / 관리자</text>
+  <text x="165" y="418" text-anchor="middle" class="card-sub">시험 응시 · 결과 조회</text>
+
+  <g filter="url(#softShadow)">
+    <rect x="77" y="470" width="176" height="190" rx="22" fill="#10151C"/>
+  </g>
+  <path d="M165 502 L202 562 L128 562 Z" fill="#FFFFFF"/>
+  <text x="165" y="603" text-anchor="middle" font-size="20" font-weight="800" fill="#FFFFFF">React Frontend</text>
+  <text x="165" y="629" text-anchor="middle" font-size="14" font-weight="700" fill="#B9C4D0">Vercel</text>
+  <rect x="88" y="690" width="154" height="52" rx="14" fill="#F0F6FD"/>
+  <text x="165" y="713" text-anchor="middle" class="small">Polling</text>
+  <text x="165" y="730" text-anchor="middle" class="small">채점 결과 · AI 리포트</text>
+
+  <!-- AWS Cloud -->
+  <g filter="url(#shadow)">
+    <rect x="320" y="140" width="1540" height="815" rx="34" fill="url(#cloud)" stroke="#A8BDD2" stroke-width="2.5" stroke-dasharray="9 7"/>
+  </g>
+  <rect x="350" y="160" width="128" height="38" rx="12" fill="#202B3A"/>
+  <text x="414" y="185" text-anchor="middle" font-size="18" font-weight="800" fill="#FFAA2B">aws</text>
+  <text x="495" y="185" class="cloud-title">AWS Cloud · Seoul Region (ap-northeast-2)</text>
+
+  <!-- Main grading lane -->
+  <rect x="350" y="220" width="1480" height="330" rx="25" fill="url(#blueCard)" stroke="#C8DAEE" stroke-width="2"/>
+  <rect x="370" y="238" width="190" height="32" rx="16" fill="#DCEBFF"/>
+  <text x="465" y="260" text-anchor="middle" class="section" fill="#2568B0">MAIN GRADING FLOW</text>
+
+  <!-- ALB -->
+  <g filter="url(#softShadow)">
+    <rect x="375" y="300" width="190" height="180" rx="22" fill="#FFFFFF" stroke="#BDD2E8" stroke-width="2"/>
+  </g>
+  <circle cx="470" cy="345" r="17" fill="#7D4DDB"/>
+  <circle cx="430" cy="395" r="13" fill="#7D4DDB"/>
+  <circle cx="470" cy="395" r="13" fill="#7D4DDB"/>
+  <circle cx="510" cy="395" r="13" fill="#7D4DDB"/>
+  <path d="M470 362v18M430 382h80M430 382v3M470 382v3M510 382v3" stroke="#7D4DDB" stroke-width="6" stroke-linecap="round" fill="none"/>
+  <text x="470" y="438" text-anchor="middle" class="card-title">Application</text>
+  <text x="470" y="461" text-anchor="middle" class="card-title">Load Balancer</text>
+
+  <!-- API ASG -->
+  <g filter="url(#softShadow)">
+    <rect x="625" y="286" width="235" height="208" rx="24" fill="#FFFFFF" stroke="#F39A43" stroke-width="2.5" stroke-dasharray="8 6"/>
+  </g>
+  <rect x="650" y="310" width="185" height="32" rx="16" fill="#FFF0DF"/>
+  <text x="742" y="331" text-anchor="middle" class="pill" fill="#D67218">AUTO SCALING GROUP</text>
+  <g fill="#F28C28">
+    <rect x="665" y="365" width="42" height="52" rx="7"/>
+    <rect x="721" y="365" width="42" height="52" rx="7"/>
+    <rect x="777" y="365" width="42" height="52" rx="7"/>
+  </g>
+  <g fill="#FFFFFF">
+    <circle cx="675" cy="378" r="3"/><circle cx="675" cy="390" r="3"/><rect x="684" y="376" width="14" height="4" rx="2"/><rect x="684" y="388" width="14" height="4" rx="2"/>
+    <circle cx="731" cy="378" r="3"/><circle cx="731" cy="390" r="3"/><rect x="740" y="376" width="14" height="4" rx="2"/><rect x="740" y="388" width="14" height="4" rx="2"/>
+    <circle cx="787" cy="378" r="3"/><circle cx="787" cy="390" r="3"/><rect x="796" y="376" width="14" height="4" rx="2"/><rect x="796" y="388" width="14" height="4" rx="2"/>
+  </g>
+  <text x="742" y="449" text-anchor="middle" class="card-title">FastAPI API ASG</text>
+  <text x="742" y="472" text-anchor="middle" class="card-sub">요청 접수 · 상태 조회 · SQS enqueue</text>
+
+  <!-- SQS -->
+  <g filter="url(#softShadow)">
+    <rect x="920" y="300" width="190" height="180" rx="22" fill="#FFFFFF" stroke="#E2BBD0" stroke-width="2"/>
+  </g>
+  <circle cx="1015" cy="365" r="43" fill="#D73A86"/>
+  <path d="M992 345h20l9 9h17M992 365h46M992 385h20l9-9h17" stroke="#FFFFFF" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="1015" y="433" text-anchor="middle" class="card-title">Amazon SQS</text>
+  <text x="1015" y="456" text-anchor="middle" class="card-sub">reference-only jobs + DLQ</text>
+
+  <!-- Worker ASG -->
+  <g filter="url(#softShadow)">
+    <rect x="1170" y="286" width="250" height="208" rx="24" fill="#FFFFFF" stroke="#F39A43" stroke-width="2.5" stroke-dasharray="8 6"/>
+  </g>
+  <rect x="1195" y="310" width="200" height="32" rx="16" fill="#FFF0DF"/>
+  <text x="1295" y="331" text-anchor="middle" class="pill" fill="#D67218">AUTO SCALING GROUP</text>
+  <g transform="translate(1210 365)" fill="#F28C28">
+    <rect x="0" y="0" width="48" height="48" rx="8"/>
+    <rect x="62" y="0" width="48" height="48" rx="8"/>
+    <rect x="124" y="0" width="48" height="48" rx="8"/>
+  </g>
+  <g fill="#FFFFFF">
+    <path d="M1225 379h18v18h-18zM1287 379h18v18h-18zM1349 379h18v18h-18z"/>
+  </g>
+  <text x="1295" y="445" text-anchor="middle" class="card-title">Worker ASG</text>
+  <rect x="1210" y="458" width="78" height="22" rx="11" fill="#E4F1FF"/><text x="1249" y="474" text-anchor="middle" class="pill" fill="#2876D2">judge</text>
+  <rect x="1300" y="458" width="100" height="22" rx="11" fill="#EFE6FF"/><text x="1350" y="474" text-anchor="middle" class="pill" fill="#8353D3">llm_report</text>
+
+  <!-- Docker -->
+  <g filter="url(#softShadow)">
+    <rect x="1480" y="300" width="190" height="180" rx="22" fill="#FFFFFF" stroke="#B9D7EF" stroke-width="2"/>
+  </g>
+  <g transform="translate(1522 337)" fill="#1597D4">
+    <rect x="0" y="30" width="20" height="18" rx="2"/><rect x="24" y="30" width="20" height="18" rx="2"/><rect x="48" y="30" width="20" height="18" rx="2"/>
+    <rect x="24" y="8" width="20" height="18" rx="2"/><rect x="48" y="8" width="20" height="18" rx="2"/><rect x="72" y="30" width="20" height="18" rx="2"/>
+    <path d="M0 53h97c-2 25-18 39-47 39-30 0-44-14-50-39z"/>
+    <path d="M99 42c11-7 19-5 25 1-5 9-14 13-26 12" fill="none" stroke="#1597D4" stroke-width="6" stroke-linecap="round"/>
+  </g>
+  <text x="1575" y="438" text-anchor="middle" class="card-title">Docker Sandbox</text>
+  <text x="1575" y="461" text-anchor="middle" class="card-sub">isolated Python execution</text>
+
+  <!-- Main arrows -->
+  <path d="M280 555 H330 V390 H365" stroke="#2876D2" stroke-width="4" fill="none" marker-end="url(#arrowBlue)"/>
+  <path d="M565 390 H615" stroke="#2876D2" stroke-width="4" fill="none" marker-end="url(#arrowBlue)"/>
+  <path d="M860 390 H910" stroke="#2876D2" stroke-width="4" fill="none" marker-end="url(#arrowBlue)"/>
+  <path d="M1110 390 H1160" stroke="#2876D2" stroke-width="4" fill="none" marker-end="url(#arrowBlue)"/>
+  <path d="M1420 390 H1470" stroke="#2876D2" stroke-width="4" fill="none" marker-end="url(#arrowBlue)"/>
+  <rect x="866" y="356" width="42" height="22" rx="11" fill="#FFFFFF"/><text x="887" y="372" text-anchor="middle" class="pill" fill="#2876D2">ID</text>
+
+  <!-- Data layer -->
+  <rect x="1710" y="250" width="100" height="250" rx="20" fill="#FFFFFF" stroke="#BFD0E1" stroke-width="2"/>
+  <g transform="translate(1730 278)">
+    <ellipse cx="30" cy="12" rx="30" ry="12" fill="#2475D0"/>
+    <path d="M0 12v52c0 7 13 12 30 12s30-5 30-12V12" fill="#2475D0"/>
+    <ellipse cx="30" cy="64" rx="30" ry="12" fill="#1D65B6"/>
+  </g>
+  <text x="1760" y="377" text-anchor="middle" class="card-title">RDS</text>
+  <text x="1760" y="399" text-anchor="middle" class="small">MySQL</text>
+  <line x1="1728" y1="420" x2="1792" y2="420" stroke="#D3DFEA"/>
+  <g transform="translate(1730 438)">
+    <path d="M5 7h50l-5 68H10z" fill="#42A846"/>
+    <ellipse cx="30" cy="7" rx="25" ry="9" fill="#58BD5C"/>
+  </g>
+  <text x="1760" y="542" text-anchor="middle" class="card-title">S3</text>
+  <text x="1760" y="564" text-anchor="middle" class="small">Artifacts</text>
+
+  <!-- storage arrows -->
+  <path d="M742 494 V520 H1690 V350 H1700" stroke="#2876D2" stroke-width="3" fill="none" marker-end="url(#arrowBlue)"/>
+  <path d="M1295 494 V530 H1690 V470 H1700" stroke="#2876D2" stroke-width="3" fill="none" marker-end="url(#arrowBlue)"/>
+  <text x="1528" y="518" class="small">metadata · status · S3 keys</text>
+  <text x="1515" y="550" class="small">source · testcases · results</text>
+
+  <!-- AI Report lane -->
+  <rect x="350" y="575" width="1480" height="145" rx="25" fill="url(#violetCard)" stroke="#D9C4F5" stroke-width="2"/>
+  <rect x="370" y="592" width="190" height="32" rx="16" fill="#E9DDFA"/>
+  <text x="465" y="614" text-anchor="middle" class="section" fill="#7443BC">BEDROCK AI REPORT</text>
+  <text x="395" y="658" class="card-title">최종 제출 완료</text>
+  <text x="395" y="684" class="card-sub">문제별 최신 제출 + 채점 결과</text>
+  <path d="M570 650 H785" stroke="#8353D3" stroke-width="4" fill="none" marker-end="url(#arrowPurple)"/>
+  <rect x="595" y="618" width="154" height="26" rx="13" fill="#FFFFFF"/>
+  <text x="672" y="636" text-anchor="middle" class="pill" fill="#8353D3">SQS: llm_report</text>
+
+  <rect x="800" y="610" width="200" height="82" rx="18" fill="#FFFFFF" stroke="#CDB4EE" stroke-width="2"/>
+  <text x="900" y="644" text-anchor="middle" class="card-title">Worker</text>
+  <text x="900" y="669" text-anchor="middle" class="card-sub">리포트 입력 구성</text>
+  <path d="M1000 650 H1095" stroke="#8353D3" stroke-width="4" fill="none" marker-end="url(#arrowPurple)"/>
+
+  <rect x="1110" y="600" width="245" height="102" rx="20" fill="#FFFFFF" stroke="#B699E7" stroke-width="2.5"/>
+  <circle cx="1150" cy="651" r="25" fill="#8353D3"/>
+  <path d="M1140 651l8 8 14-19M1150 627v-8M1150 683v-8M1126 651h-8M1182 651h-8" stroke="#FFFFFF" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="1240" y="641" text-anchor="middle" class="card-title">Amazon Bedrock</text>
+  <text x="1240" y="668" text-anchor="middle" class="small">Amazon Nova 2 Lite</text>
+  <path d="M1355 650 H1480" stroke="#8353D3" stroke-width="4" fill="none" marker-end="url(#arrowPurple)"/>
+  <rect x="1495" y="610" width="285" height="82" rx="18" fill="#FFFFFF" stroke="#CDB4EE" stroke-width="2"/>
+  <text x="1638" y="644" text-anchor="middle" class="card-title">AI Learning Report</text>
+  <text x="1638" y="669" text-anchor="middle" class="card-sub">RDS 저장 → Frontend Polling</text>
+
+  <!-- Monitoring lane -->
+  <rect x="350" y="745" width="1480" height="165" rx="25" fill="url(#monitorCard)" stroke="#C5DEDF" stroke-width="2"/>
+  <rect x="370" y="762" width="250" height="32" rx="16" fill="#F1DDED"/>
+  <text x="495" y="784" text-anchor="middle" class="section" fill="#B13A78">MONITORING &amp; COST CONTROL</text>
+
+  <g filter="url(#softShadow)">
+    <rect x="380" y="815" width="220" height="68" rx="17" fill="#FFFFFF" stroke="#C8A9D9" stroke-width="2"/>
+  </g>
+  <rect x="398" y="834" width="30" height="30" rx="8" fill="#8C4BD4"/>
+  <path d="M407 849h12M413 843v12" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>
+  <text x="445" y="843" class="card-title">API Gateway</text>
+  <text x="445" y="866" class="card-sub">POST /wake</text>
+
+  <g filter="url(#softShadow)">
+    <rect x="660" y="805" width="280" height="88" rx="18" fill="#FFFFFF" stroke="#D5A8C4" stroke-width="2"/>
+  </g>
+  <circle cx="705" cy="849" r="25" fill="#D0448B"/>
+  <path d="M690 857l10-13 9 7 13-18" stroke="#FFFFFF" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="745" y="837" class="card-title">Amazon CloudWatch</text>
+  <text x="745" y="862" class="small">Logs · Metrics · Dashboard · Alarms</text>
+
+  <g filter="url(#softShadow)">
+    <rect x="1000" y="815" width="220" height="68" rx="17" fill="#FFFFFF" stroke="#D5A8C4" stroke-width="2"/>
+  </g>
+  <circle cx="1040" cy="849" r="22" fill="#D0448B"/>
+  <path d="M1029 849h22M1040 838v22" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>
+  <text x="1075" y="843" class="card-title">EventBridge</text>
+  <text x="1075" y="866" class="card-sub">scheduled guard</text>
+
+  <g filter="url(#softShadow)">
+    <rect x="1280" y="805" width="280" height="88" rx="18" fill="#FFFFFF" stroke="#F0B66F" stroke-width="2"/>
+  </g>
+  <rect x="1300" y="824" width="50" height="50" rx="12" fill="#F28C28"/>
+  <text x="1325" y="860" text-anchor="middle" font-size="35" font-weight="700" fill="#FFFFFF">λ</text>
+  <text x="1370" y="837" font-size="17" font-weight="800">Lambda Wake / Cost Guard</text>
+  <text x="1370" y="862" class="card-sub">API · Worker ASG scale 0 ↔ N</text>
+
+  <g filter="url(#softShadow)">
+    <rect x="1620" y="815" width="170" height="68" rx="17" fill="#FFFFFF" stroke="#9ACCC8" stroke-width="2"/>
+  </g>
+  <rect x="1640" y="834" width="32" height="30" rx="7" fill="#168C89"/>
+  <path d="M1648 850h16M1656 842v16" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>
+  <text x="1684" y="843" class="card-title">Auto Scaling</text>
+  <text x="1684" y="866" class="card-sub">queue backlog</text>
+
+  <!-- monitoring arrows -->
+  <path d="M280 590 H310 V849 H370" stroke="#8353D3" stroke-width="3" fill="none" marker-end="url(#arrowPurple)"/>
+  <path d="M600 849 H625 V900 H1260 V875 H1270" stroke="#8353D3" stroke-width="3.5" fill="none" marker-end="url(#arrowPurple)"/>
+  <path d="M940 849 H1270" stroke="#D0448B" stroke-width="3.5" fill="none" marker-end="url(#arrowPink)"/>
+  <path d="M1220 849 H1270" stroke="#D0448B" stroke-width="3.5" fill="none" marker-end="url(#arrowPink)"/>
+  <path d="M1560 849 H1610" stroke="#168C89" stroke-width="3.5" fill="none" marker-end="url(#arrowTeal)"/>
+  <path d="M1705 815 V775 H1295 V505" stroke="#168C89" stroke-width="3" stroke-dasharray="7 6" fill="none" marker-end="url(#arrowTeal)"/>
+  <path d="M1420 805 V770 H742 V505" stroke="#D0448B" stroke-width="3" stroke-dasharray="7 6" fill="none" marker-end="url(#arrowPink)"/>
+  <text x="1080" y="759" class="small" fill="#B13A78">idle alarm + scheduled check</text>
+  <text x="1470" y="759" class="small" fill="#168C89">SQS backlog scaling</text>
+
+  <!-- metric collection dotted lines -->
+  <path d="M470 480 V735 H750 V795" stroke="#D0448B" stroke-width="2.5" stroke-dasharray="5 6" fill="none"/>
+  <path d="M742 494 V735 H790 V795" stroke="#D0448B" stroke-width="2.5" stroke-dasharray="5 6" fill="none"/>
+  <path d="M1015 480 V735 H830 V795" stroke="#D0448B" stroke-width="2.5" stroke-dasharray="5 6" fill="none"/>
+  <path d="M1295 494 V735 H870 V795" stroke="#D0448B" stroke-width="2.5" stroke-dasharray="5 6" fill="none"/>
+
+  <!-- ECR -->
+  <rect x="1465" y="170" width="230" height="52" rx="16" fill="#FFFFFF" stroke="#F0B66F" stroke-width="2"/>
+  <rect x="1482" y="183" width="26" height="26" rx="6" fill="#F28C28"/>
+  <path d="M1489 190h12v12h-12z" fill="none" stroke="#FFFFFF" stroke-width="2"/>
+  <text x="1520" y="192" class="card-title">Amazon ECR</text>
+  <text x="1520" y="211" class="small">Python runner image</text>
+  <path d="M1580 222 V290" stroke="#F28C28" stroke-width="3" stroke-dasharray="6 5" fill="none" marker-end="url(#arrowOrange)"/>
+
+  <!-- Legend -->
+  <rect x="350" y="975" width="1480" height="64" rx="20" fill="#FFFFFF" stroke="#D4E0EC" stroke-width="1.5"/>
+  <text x="380" y="1014" class="legend">FLOW LEGEND</text>
+  <line x1="520" y1="1008" x2="580" y2="1008" stroke="#2876D2" stroke-width="5" marker-end="url(#arrowBlue)"/>
+  <text x="600" y="1014" class="legend">요청 접수 및 비동기 채점</text>
+  <line x1="855" y1="1008" x2="915" y2="1008" stroke="#8353D3" stroke-width="5" marker-end="url(#arrowPurple)"/>
+  <text x="935" y="1014" class="legend">Bedrock AI 리포트</text>
+  <line x1="1180" y1="1008" x2="1240" y2="1008" stroke="#D0448B" stroke-width="5" marker-end="url(#arrowPink)"/>
+  <text x="1260" y="1014" class="legend">모니터링 · 알람</text>
+  <line x1="1490" y1="1008" x2="1550" y2="1008" stroke="#168C89" stroke-width="5" marker-end="url(#arrowTeal)"/>
+  <text x="1570" y="1014" class="legend">Auto Scaling · Scale-to-Zero</text>
+</svg>
