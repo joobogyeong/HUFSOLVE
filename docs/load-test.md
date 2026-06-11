@@ -31,6 +31,8 @@ CloudWatch에서 다음 지표를 확인합니다.
 ## Script
 
 부하 테스트 스크립트는 `scripts/load_test.py`입니다.
+Locust 기반 동시 대량 제출 테스트는 `scripts/locustfile.py`와
+`docs/load-test-team-runbook.md`를 사용합니다.
 
 로컬 예시:
 
